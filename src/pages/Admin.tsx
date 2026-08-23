@@ -458,6 +458,18 @@ function CaseTypesSection() {
     else await load()
   }
 
+  async function handleQuickCategory(id: string, categoryId: string) {
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, category_id: categoryId || null } : i)))
+    const { error } = await supabase
+      .from('case_types')
+      .update({ category_id: categoryId || null })
+      .eq('id', id)
+    if (error) {
+      setError(error.message)
+      await load()
+    }
+  }
+
   return (
     <Card title="Case types">
       <ErrorBox error={error} />
@@ -532,19 +544,24 @@ function CaseTypesSection() {
             className="flex items-center justify-between rounded-lg border border-slate-200 p-3 dark:border-slate-800"
           >
             <div>
-              <div className="font-medium text-slate-900 dark:text-slate-100">
-                {item.name}
-                {item.category_id && (
-                  <span className="ml-2 text-xs text-slate-500">
-                    {categories.find((c) => c.id === item.category_id)?.name}
-                  </span>
-                )}
-              </div>
+              <div className="font-medium text-slate-900 dark:text-slate-100">{item.name}</div>
               <div className="text-xs text-slate-500">
                 {item.w_per_ft_without_doors} W/ft, {item.savings_percent}% savings
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-3">
+              <select
+                value={item.category_id ?? ''}
+                onChange={(e) => handleQuickCategory(item.id, e.target.value)}
+                className="rounded-lg border border-slate-300 bg-white p-1.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              >
+                <option value="">— no category —</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
               <button onClick={() => startEdit(item)} className="text-sm text-slate-500 hover:underline">
                 Edit
               </button>
