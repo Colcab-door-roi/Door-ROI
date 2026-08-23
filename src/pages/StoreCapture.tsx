@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { generateStoreReport } from '../lib/pdf'
+import { generateStoreReport, reportFilename } from '../lib/pdf'
 import type {
   AppSettings,
   CaseType,
@@ -316,8 +316,19 @@ function ItemCapture({
         settings,
         costRates,
       })
-      const blobUrl = doc.output('bloburl')
-      window.open(blobUrl as unknown as string, '_blank')
+      const blob = doc.output('blob')
+      const url = URL.createObjectURL(blob)
+
+      window.open(url, '_blank')
+
+      // Browser PDF viewers don't reliably use a PDF's internal metadata for
+      // "Save As" filenames, so save a correctly-named copy directly.
+      const link = document.createElement('a')
+      link.href = url
+      link.download = reportFilename(store)
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
     } finally {
       setGenerating(false)
     }
