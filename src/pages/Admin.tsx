@@ -379,7 +379,6 @@ function CategoriesSection() {
 
 const emptyCaseForm = {
   name: '',
-  category_id: '',
   w_per_ft_without_doors: '',
   savings_percent: '',
   notes: '',
@@ -387,7 +386,6 @@ const emptyCaseForm = {
 
 function CaseTypesSection() {
   const [items, setItems] = useState<CaseType[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState(emptyCaseForm)
@@ -396,13 +394,12 @@ function CaseTypesSection() {
 
   async function load() {
     setLoading(true)
-    const [caseRes, catRes] = await Promise.all([
-      supabase.from('case_types').select('*').order('name', { ascending: true }),
-      supabase.from('categories').select('*').order('name'),
-    ])
-    if (caseRes.error) setError(caseRes.error.message)
-    else setItems(caseRes.data ?? [])
-    if (catRes.data) setCategories(catRes.data)
+    const { data, error } = await supabase
+      .from('case_types')
+      .select('*')
+      .order('name', { ascending: true })
+    if (error) setError(error.message)
+    else setItems(data ?? [])
     setLoading(false)
   }
 
@@ -414,7 +411,6 @@ function CaseTypesSection() {
     setEditingId(item.id)
     setForm({
       name: item.name,
-      category_id: item.category_id ?? '',
       w_per_ft_without_doors: item.w_per_ft_without_doors.toString(),
       savings_percent: item.savings_percent.toString(),
       notes: item.notes ?? '',
@@ -433,7 +429,6 @@ function CaseTypesSection() {
 
     const payload = {
       name: form.name,
-      category_id: form.category_id || null,
       w_per_ft_without_doors: Number(form.w_per_ft_without_doors) || 0,
       savings_percent: Number(form.savings_percent) || 0,
       notes: form.notes || null,
@@ -458,18 +453,6 @@ function CaseTypesSection() {
     else await load()
   }
 
-  async function handleQuickCategory(id: string, categoryId: string) {
-    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, category_id: categoryId || null } : i)))
-    const { error } = await supabase
-      .from('case_types')
-      .update({ category_id: categoryId || null })
-      .eq('id', id)
-    if (error) {
-      setError(error.message)
-      await load()
-    }
-  }
-
   return (
     <Card title="Case types">
       <ErrorBox error={error} />
@@ -482,21 +465,6 @@ function CaseTypesSection() {
         </h3>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} required />
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-slate-600 dark:text-slate-400">Category</span>
-            <select
-              value={form.category_id}
-              onChange={(e) => setForm({ ...form, category_id: e.target.value })}
-              className="rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-            >
-              <option value="">— none —</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
           <Field
             label="W/ft without doors"
             value={form.w_per_ft_without_doors}
@@ -549,19 +517,7 @@ function CaseTypesSection() {
                 {item.w_per_ft_without_doors} W/ft, {item.savings_percent}% savings
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <select
-                value={item.category_id ?? ''}
-                onChange={(e) => handleQuickCategory(item.id, e.target.value)}
-                className="rounded-lg border border-slate-300 bg-white p-1.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-              >
-                <option value="">— no category —</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+            <div className="flex gap-2">
               <button onClick={() => startEdit(item)} className="text-sm text-slate-500 hover:underline">
                 Edit
               </button>

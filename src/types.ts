@@ -9,7 +9,6 @@ export interface CaseType {
   w_per_ft_without_doors: number
   savings_percent: number
   notes: string | null
-  category_id: string | null
 }
 
 export interface PlantType {

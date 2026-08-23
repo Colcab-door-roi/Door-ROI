@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { generateStoreReport } from '../lib/pdf'
@@ -264,11 +264,6 @@ function ItemCapture({
 
   const plantType = plantTypes.find((p) => p.id === store.plant_type_id)
 
-  const filteredCaseTypes = useMemo(
-    () => caseTypes.filter((c) => !categoryId || c.category_id === categoryId),
-    [caseTypes, categoryId],
-  )
-
   async function handleAddItem(e: FormEvent) {
     e.preventDefault()
     if (!categoryId || !caseTypeId || !qtyFt) return
@@ -354,17 +349,14 @@ function ItemCapture({
         onSubmit={handleAddItem}
         className="flex flex-col gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-800"
       >
-        <h2 className="text-sm font-medium text-slate-700 dark:text-slate-300">Add a case</h2>
+        <h2 className="text-sm font-medium text-slate-700 dark:text-slate-300">Add a case or line-up</h2>
 
         <label className="flex flex-col gap-1">
           <span className="text-sm text-slate-600 dark:text-slate-400">Category</span>
           <select
             required
             value={categoryId}
-            onChange={(e) => {
-              setCategoryId(e.target.value)
-              setCaseTypeId('')
-            }}
+            onChange={(e) => setCategoryId(e.target.value)}
             className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
           >
             <option value="">— select —</option>
@@ -382,23 +374,19 @@ function ItemCapture({
             required
             value={caseTypeId}
             onChange={(e) => setCaseTypeId(e.target.value)}
-            disabled={!categoryId}
-            className="rounded-lg border border-slate-300 bg-white p-3 text-base disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
           >
             <option value="">— select —</option>
-            {filteredCaseTypes.map((c) => (
+            {caseTypes.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
               </option>
             ))}
           </select>
-          {categoryId && filteredCaseTypes.length === 0 && (
-            <span className="text-xs text-amber-600">No case types set up for this category yet.</span>
-          )}
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="text-sm text-slate-600 dark:text-slate-400">Case length (ft)</span>
+          <span className="text-sm text-slate-600 dark:text-slate-400">Case size or line-up length (ft)</span>
           <input
             required
             type="number"
@@ -438,13 +426,13 @@ function ItemCapture({
           disabled={saving}
           className="rounded-lg bg-slate-900 p-3 font-medium text-white disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
         >
-          Add case to store
+          Add to store
         </button>
       </form>
 
       <section className="flex flex-col gap-2">
         <h2 className="text-sm font-medium text-slate-700 dark:text-slate-300">
-          Cases captured ({items.length})
+          Cases / line-ups captured ({items.length})
         </h2>
         {items.length === 0 && (
           <p className="text-sm text-slate-500 dark:text-slate-400">No cases added yet.</p>
