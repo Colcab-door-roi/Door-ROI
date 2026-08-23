@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import type { CaseType, PlantType } from '../types'
+import type { AppSettings, CaseType, Category, CostRate, PlantType } from '../types'
 
 const PASSCODE = import.meta.env.VITE_ADMIN_PASSCODE as string | undefined
 const SESSION_KEY = 'fridge-admin-unlocked'
@@ -69,14 +69,317 @@ export default function Admin() {
         </Link>
       </header>
 
+      <SettingsSection />
+      <CostRatesSection />
+      <CategoriesSection />
       <CaseTypesSection />
       <PlantTypesSection />
     </div>
   )
 }
 
+function Card({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="flex flex-col gap-4">
+      <h2 className="text-lg font-medium text-slate-900 dark:text-slate-100">{title}</h2>
+      {children}
+    </section>
+  )
+}
+
+function ErrorBox({ error }: { error: string | null }) {
+  if (!error) return null
+  return (
+    <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+      {error}
+    </p>
+  )
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+  type = 'text',
+  required = false,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  type?: string
+  required?: boolean
+}) {
+  return (
+    <label className="flex flex-col gap-1 text-sm">
+      <span className="text-slate-600 dark:text-slate-400">{label}</span>
+      <input
+        type={type}
+        inputMode={type === 'number' ? 'decimal' : undefined}
+        required={required}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+      />
+    </label>
+  )
+}
+
+// --- Settings (default electricity rate, legal disclaimer) ---
+
+function SettingsSection() {
+  const [settings, setSettings] = useState<AppSettings | null>(null)
+  const [rate, setRate] = useState('')
+  const [disclaimer, setDisclaimer] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    async function load() {
+      const { data, error } = await supabase.from('app_settings').select('*').single()
+      if (error) setError(error.message)
+      else if (data) {
+        setSettings(data)
+        setRate(data.default_electricity_rate.toString())
+        setDisclaimer(data.legal_disclaimer ?? '')
+      }
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  async function handleSave(e: FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    setError(null)
+    setSaved(false)
+    const { error } = await supabase
+      .from('app_settings')
+      .update({
+        default_electricity_rate: Number(rate) || 0,
+        legal_disclaimer: disclaimer,
+      })
+      .eq('id', true)
+    if (error) setError(error.message)
+    else setSaved(true)
+    setSaving(false)
+  }
+
+  if (loading) return <Card title="Settings"><p className="text-sm text-slate-500">Loading…</p></Card>
+  if (!settings) return <Card title="Settings"><ErrorBox error={error} /></Card>
+
+  return (
+    <Card title="Settings">
+      <ErrorBox error={error} />
+      <form
+        onSubmit={handleSave}
+        className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-800"
+      >
+        <Field label="Default electricity rate (R/kWh)" value={rate} onChange={setRate} type="number" />
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-slate-600 dark:text-slate-400">Legal disclaimer (shown on PDF reports)</span>
+          <textarea
+            value={disclaimer}
+            onChange={(e) => setDisclaimer(e.target.value)}
+            rows={4}
+            className="rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          />
+        </label>
+        <div className="flex items-center gap-3">
+          <button
+            type="submit"
+            disabled={saving}
+            className="rounded-lg bg-slate-900 px-4 py-2 font-medium text-white disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
+          >
+            Save settings
+          </button>
+          {saved && <span className="text-sm text-emerald-600">Saved</span>}
+        </div>
+      </form>
+    </Card>
+  )
+}
+
+// --- Cost rates (door / reclad / canopy LED / undershelf LED, 4ft/5ft/7ft) ---
+
+function CostRatesSection() {
+  const [rates, setRates] = useState<CostRate[]>([])
+  const [drafts, setDrafts] = useState<Record<string, { cost_4ft: string; cost_5ft: string; cost_7ft: string }>>({})
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [savingType, setSavingType] = useState<string | null>(null)
+
+  async function load() {
+    setLoading(true)
+    const { data, error } = await supabase.from('cost_rates').select('*').order('cost_type')
+    if (error) setError(error.message)
+    else if (data) {
+      setRates(data)
+      const d: typeof drafts = {}
+      for (const r of data) {
+        d[r.cost_type] = {
+          cost_4ft: r.cost_4ft.toString(),
+          cost_5ft: r.cost_5ft.toString(),
+          cost_7ft: r.cost_7ft.toString(),
+        }
+      }
+      setDrafts(d)
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  async function handleSave(costType: string) {
+    setSavingType(costType)
+    setError(null)
+    const d = drafts[costType]
+    const { error } = await supabase
+      .from('cost_rates')
+      .update({
+        cost_4ft: Number(d.cost_4ft) || 0,
+        cost_5ft: Number(d.cost_5ft) || 0,
+        cost_7ft: Number(d.cost_7ft) || 0,
+      })
+      .eq('cost_type', costType)
+    if (error) setError(error.message)
+    else await load()
+    setSavingType(null)
+  }
+
+  return (
+    <Card title="Cost rates">
+      <p className="text-sm text-slate-500 dark:text-slate-400">
+        ~90% of jobs price in fixed 4ft/5ft/7ft segments. Any other case length is priced
+        proportionally off the 4ft rate: (length ÷ 4) × 4ft cost.
+      </p>
+      <ErrorBox error={error} />
+      {loading && <p className="text-sm text-slate-500">Loading…</p>}
+      <div className="flex flex-col gap-3">
+        {rates.map((r) => {
+          const d = drafts[r.cost_type] ?? { cost_4ft: '', cost_5ft: '', cost_7ft: '' }
+          return (
+            <div
+              key={r.cost_type}
+              className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-800"
+            >
+              <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300">{r.label}</h3>
+              <div className="grid grid-cols-3 gap-3">
+                <Field
+                  label="4ft cost (R)"
+                  value={d.cost_4ft}
+                  type="number"
+                  onChange={(v) => setDrafts({ ...drafts, [r.cost_type]: { ...d, cost_4ft: v } })}
+                />
+                <Field
+                  label="5ft cost (R)"
+                  value={d.cost_5ft}
+                  type="number"
+                  onChange={(v) => setDrafts({ ...drafts, [r.cost_type]: { ...d, cost_5ft: v } })}
+                />
+                <Field
+                  label="7ft cost (R)"
+                  value={d.cost_7ft}
+                  type="number"
+                  onChange={(v) => setDrafts({ ...drafts, [r.cost_type]: { ...d, cost_7ft: v } })}
+                />
+              </div>
+              <button
+                onClick={() => handleSave(r.cost_type)}
+                disabled={savingType === r.cost_type}
+                className="self-start rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
+              >
+                Save {r.label}
+              </button>
+            </div>
+          )
+        })}
+      </div>
+    </Card>
+  )
+}
+
+// --- Categories ---
+
+function CategoriesSection() {
+  const [items, setItems] = useState<Category[]>([])
+  const [name, setName] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  async function load() {
+    setLoading(true)
+    const { data, error } = await supabase.from('categories').select('*').order('name')
+    if (error) setError(error.message)
+    else setItems(data ?? [])
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  async function handleAdd(e: FormEvent) {
+    e.preventDefault()
+    if (!name.trim()) return
+    const { error } = await supabase.from('categories').insert({ name: name.trim() })
+    if (error) setError(error.message)
+    else {
+      setName('')
+      await load()
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm('Delete this category? Case types using it will need reassigning.')) return
+    const { error } = await supabase.from('categories').delete().eq('id', id)
+    if (error) setError(error.message)
+    else await load()
+  }
+
+  return (
+    <Card title="Categories">
+      <ErrorBox error={error} />
+      <form onSubmit={handleAdd} className="flex gap-2">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="New category name"
+          className="flex-1 rounded-lg border border-slate-300 bg-white p-2 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+        />
+        <button
+          type="submit"
+          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white dark:bg-slate-100 dark:text-slate-900"
+        >
+          Add
+        </button>
+      </form>
+      {loading && <p className="text-sm text-slate-500">Loading…</p>}
+      <div className="flex flex-wrap gap-2">
+        {items.map((c) => (
+          <span
+            key={c.id}
+            className="flex items-center gap-2 rounded-full border border-slate-300 px-3 py-1 text-sm dark:border-slate-700"
+          >
+            {c.name}
+            <button onClick={() => handleDelete(c.id)} className="text-red-500 hover:underline">
+              ×
+            </button>
+          </span>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
+// --- Case types ---
+
 const emptyCaseForm = {
   name: '',
+  category_id: '',
   w_per_ft_without_doors: '',
   savings_percent: '',
   notes: '',
@@ -84,6 +387,7 @@ const emptyCaseForm = {
 
 function CaseTypesSection() {
   const [items, setItems] = useState<CaseType[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState(emptyCaseForm)
@@ -92,12 +396,13 @@ function CaseTypesSection() {
 
   async function load() {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('case_types')
-      .select('*')
-      .order('name', { ascending: true })
-    if (error) setError(error.message)
-    else setItems(data ?? [])
+    const [caseRes, catRes] = await Promise.all([
+      supabase.from('case_types').select('*').order('name', { ascending: true }),
+      supabase.from('categories').select('*').order('name'),
+    ])
+    if (caseRes.error) setError(caseRes.error.message)
+    else setItems(caseRes.data ?? [])
+    if (catRes.data) setCategories(catRes.data)
     setLoading(false)
   }
 
@@ -109,6 +414,7 @@ function CaseTypesSection() {
     setEditingId(item.id)
     setForm({
       name: item.name,
+      category_id: item.category_id ?? '',
       w_per_ft_without_doors: item.w_per_ft_without_doors.toString(),
       savings_percent: item.savings_percent.toString(),
       notes: item.notes ?? '',
@@ -127,8 +433,9 @@ function CaseTypesSection() {
 
     const payload = {
       name: form.name,
-      w_per_ft_without_doors: Number(form.w_per_ft_without_doors),
-      savings_percent: Number(form.savings_percent),
+      category_id: form.category_id || null,
+      w_per_ft_without_doors: Number(form.w_per_ft_without_doors) || 0,
+      savings_percent: Number(form.savings_percent) || 0,
       notes: form.notes || null,
     }
 
@@ -152,15 +459,8 @@ function CaseTypesSection() {
   }
 
   return (
-    <section className="flex flex-col gap-4">
-      <h2 className="text-lg font-medium text-slate-900 dark:text-slate-100">Case types</h2>
-
-      {error && (
-        <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
-          {error}
-        </p>
-      )}
-
+    <Card title="Case types">
+      <ErrorBox error={error} />
       <form
         onSubmit={handleSave}
         className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-800"
@@ -170,6 +470,21 @@ function CaseTypesSection() {
         </h3>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} required />
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-slate-600 dark:text-slate-400">Category</span>
+            <select
+              value={form.category_id}
+              onChange={(e) => setForm({ ...form, category_id: e.target.value })}
+              className="rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            >
+              <option value="">— none —</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <Field
             label="W/ft without doors"
             value={form.w_per_ft_without_doors}
@@ -217,7 +532,14 @@ function CaseTypesSection() {
             className="flex items-center justify-between rounded-lg border border-slate-200 p-3 dark:border-slate-800"
           >
             <div>
-              <div className="font-medium text-slate-900 dark:text-slate-100">{item.name}</div>
+              <div className="font-medium text-slate-900 dark:text-slate-100">
+                {item.name}
+                {item.category_id && (
+                  <span className="ml-2 text-xs text-slate-500">
+                    {categories.find((c) => c.id === item.category_id)?.name}
+                  </span>
+                )}
+              </div>
               <div className="text-xs text-slate-500">
                 {item.w_per_ft_without_doors} W/ft, {item.savings_percent}% savings
               </div>
@@ -233,9 +555,11 @@ function CaseTypesSection() {
           </div>
         ))}
       </div>
-    </section>
+    </Card>
   )
 }
+
+// --- Plant types ---
 
 const emptyPlantForm = { name: '', cop: '' }
 
@@ -277,7 +601,7 @@ function PlantTypesSection() {
     setSaving(true)
     setError(null)
 
-    const payload = { name: form.name, cop: Number(form.cop) }
+    const payload = { name: form.name, cop: Number(form.cop) || 0 }
 
     const { error } = editingId
       ? await supabase.from('plant_types').update(payload).eq('id', editingId)
@@ -299,17 +623,8 @@ function PlantTypesSection() {
   }
 
   return (
-    <section className="flex flex-col gap-4">
-      <h2 className="text-lg font-medium text-slate-900 dark:text-slate-100">
-        Refrigeration plant types
-      </h2>
-
-      {error && (
-        <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
-          {error}
-        </p>
-      )}
-
+    <Card title="Refrigeration plant types">
+      <ErrorBox error={error} />
       <form
         onSubmit={handleSave}
         className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-800"
@@ -365,33 +680,6 @@ function PlantTypesSection() {
           </div>
         ))}
       </div>
-    </section>
-  )
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  type = 'text',
-  required = false,
-}: {
-  label: string
-  value: string
-  onChange: (v: string) => void
-  type?: string
-  required?: boolean
-}) {
-  return (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="text-slate-600 dark:text-slate-400">{label}</span>
-      <input
-        type={type}
-        required={required}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-      />
-    </label>
+    </Card>
   )
 }

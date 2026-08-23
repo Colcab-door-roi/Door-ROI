@@ -1,12 +1,12 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import Calculator from './pages/Calculator'
+import StoreCapture from './pages/StoreCapture'
 import Admin from './pages/Admin'
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Calculator />} />
+        <Route path="/" element={<StoreCapture />} />
         <Route path="/admin" element={<Admin />} />
       </Routes>
     </BrowserRouter>
