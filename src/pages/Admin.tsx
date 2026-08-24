@@ -481,6 +481,7 @@ const emptyCaseForm = {
   savings_percent: '',
   notes: '',
   is_gdf: false,
+  gdf_watts_per_door: '',
 }
 
 function CaseTypesSection() {
@@ -514,6 +515,7 @@ function CaseTypesSection() {
       savings_percent: item.savings_percent.toString(),
       notes: item.notes ?? '',
       is_gdf: item.is_gdf,
+      gdf_watts_per_door: item.gdf_watts_per_door.toString(),
     })
   }
 
@@ -533,6 +535,7 @@ function CaseTypesSection() {
       savings_percent: Number(form.savings_percent) || 0,
       notes: form.notes || null,
       is_gdf: form.is_gdf,
+      gdf_watts_per_door: Number(form.gdf_watts_per_door) || 0,
     }
 
     const { error } = editingId
@@ -574,7 +577,15 @@ function CaseTypesSection() {
         </label>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} required />
-          {!form.is_gdf && (
+          {form.is_gdf ? (
+            <Field
+              label="Door & frame electrical load (W/door)"
+              value={form.gdf_watts_per_door}
+              onChange={(v) => setForm({ ...form, gdf_watts_per_door: v })}
+              type="number"
+              required
+            />
+          ) : (
             <>
               <Field
                 label="W/ft without doors"
@@ -628,7 +639,7 @@ function CaseTypesSection() {
               <div className="font-medium text-slate-900 dark:text-slate-100">{item.name}</div>
               <div className="text-xs text-slate-500">
                 {item.is_gdf
-                  ? 'GDF — measured in doors'
+                  ? `GDF — ${item.gdf_watts_per_door} W/door`
                   : `${item.w_per_ft_without_doors} W/ft, ${item.savings_percent}% saving`}
               </div>
             </div>
@@ -825,7 +836,7 @@ function DoorTypesSection() {
 function CasemSection() {
   const [settings, setSettings] = useState<CasemSettings | null>(null)
   const [costPerUnit, setCostPerUnit] = useState('')
-  const [savingsPerDoor, setSavingsPerDoor] = useState('')
+  const [savingsPercent, setSavingsPercent] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -838,7 +849,7 @@ function CasemSection() {
       else if (data) {
         setSettings(data)
         setCostPerUnit(data.cost_per_unit.toString())
-        setSavingsPerDoor(data.savings_watts_per_door.toString())
+        setSavingsPercent(data.savings_percent.toString())
       }
       setLoading(false)
     }
@@ -854,7 +865,7 @@ function CasemSection() {
       .from('casem_settings')
       .update({
         cost_per_unit: Number(costPerUnit) || 0,
-        savings_watts_per_door: Number(savingsPerDoor) || 0,
+        savings_percent: Number(savingsPercent) || 0,
       })
       .eq('id', true)
     if (error) setError(error.message)
@@ -869,7 +880,8 @@ function CasemSection() {
     <Card title="Casem">
       <p className="text-sm text-slate-500 dark:text-slate-400">
         RH-adaptive door heater controller for GDF cases. One Casem module per physical GDF unit
-        (cost × number of units); savings scale with total door count.
+        (cost × number of units); savings are a % reduction on each GDF case type's own baseline
+        door & frame electrical load, scaled by total door count.
       </p>
       <ErrorBox error={error} />
       <form
@@ -878,12 +890,7 @@ function CasemSection() {
       >
         <div className="grid grid-cols-2 gap-3">
           <Field label="Cost per unit (R)" value={costPerUnit} onChange={setCostPerUnit} type="number" />
-          <Field
-            label="Savings per door (W)"
-            value={savingsPerDoor}
-            onChange={setSavingsPerDoor}
-            type="number"
-          />
+          <Field label="Savings (%)" value={savingsPercent} onChange={setSavingsPercent} type="number" />
         </div>
         <div className="flex items-center gap-3">
           <button

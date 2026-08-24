@@ -179,9 +179,13 @@ export async function generateStoreReport(ctx: ReportContext) {
     if (caseType.is_gdf) {
       const qtyDoors = item.qty_doors ?? 0
       const qtyUnits = item.qty_gdf_units ?? 0
-      result = item.casem
-        ? calculateGdfCasemSavings(qtyDoors, casemSettings, store.electricity_rate)
-        : ZERO_RESULT
+      result = calculateGdfCasemSavings(
+        caseType,
+        qtyDoors,
+        casemSettings,
+        item.casem,
+        store.electricity_rate,
+      )
       upgradeCost = item.casem ? casemSettings.cost_per_unit * qtyUnits : 0
       qtyDisplay = `${qtyDoors} dr / ${qtyUnits}u`
       options = item.casem ? 'Casem' : '—'

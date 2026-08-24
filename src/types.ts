@@ -10,6 +10,7 @@ export interface CaseType {
   savings_percent: number
   notes: string | null
   is_gdf: boolean
+  gdf_watts_per_door: number
 }
 
 export interface PlantType {
@@ -29,7 +30,7 @@ export interface DoorType {
 
 export interface CasemSettings {
   cost_per_unit: number
-  savings_watts_per_door: number
+  savings_percent: number
 }
 
 export interface AppSettings {
