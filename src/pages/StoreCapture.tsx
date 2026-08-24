@@ -295,6 +295,7 @@ function ItemCapture({
   const [canopyLed, setCanopyLed] = useState(false)
   const [undershelfLed, setUndershelfLed] = useState(false)
   const [notes, setNotes] = useState('')
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
@@ -302,45 +303,72 @@ function ItemCapture({
   const plantType = plantTypes.find((p) => p.id === store.plant_type_id)
   const doorType = doorTypes.find((d) => d.id === store.door_type_id)
 
-  async function handleAddItem(e: FormEvent) {
+  function resetItemForm() {
+    setEditingItemId(null)
+    setCategoryId('')
+    setCaseTypeId('')
+    setQtyFt('')
+    setReclad(false)
+    setCanopyLed(false)
+    setUndershelfLed(false)
+    setNotes('')
+  }
+
+  function startEditItem(item: StoreItem) {
+    setEditingItemId(item.id)
+    setCategoryId(item.category_id)
+    setCaseTypeId(item.case_type_id)
+    setQtyFt(item.qty_ft.toString())
+    setReclad(item.reclad)
+    setCanopyLed(item.canopy_led)
+    setUndershelfLed(item.undershelf_led)
+    setNotes(item.notes ?? '')
+  }
+
+  async function handleSubmitItem(e: FormEvent) {
     e.preventDefault()
     if (!categoryId || !caseTypeId || !qtyFt) return
     setSaving(true)
     setError(null)
 
-    const { data, error } = await supabase
-      .from('store_items')
-      .insert({
-        store_visit_id: store.id,
-        category_id: categoryId,
-        case_type_id: caseTypeId,
-        qty_ft: Number(qtyFt) || 0,
-        reclad,
-        canopy_led: canopyLed,
-        undershelf_led: undershelfLed,
-        notes: notes || null,
-      })
-      .select()
-      .single()
+    const payload = {
+      category_id: categoryId,
+      case_type_id: caseTypeId,
+      qty_ft: Number(qtyFt) || 0,
+      reclad,
+      canopy_led: canopyLed,
+      undershelf_led: undershelfLed,
+      notes: notes || null,
+    }
+
+    const { data, error } = editingItemId
+      ? await supabase.from('store_items').update(payload).eq('id', editingItemId).select().single()
+      : await supabase
+          .from('store_items')
+          .insert({ ...payload, store_visit_id: store.id })
+          .select()
+          .single()
 
     if (error) {
       setError(error.message)
+    } else if (editingItemId) {
+      setItems((prev) => prev.map((i) => (i.id === editingItemId ? data : i)))
+      resetItemForm()
     } else {
       setItems((prev) => [...prev, data])
-      setCaseTypeId('')
-      setQtyFt('')
-      setReclad(false)
-      setCanopyLed(false)
-      setUndershelfLed(false)
-      setNotes('')
+      resetItemForm()
     }
     setSaving(false)
   }
 
   async function handleDeleteItem(id: string) {
+    if (!confirm('Remove this case or line-up?')) return
     const { error } = await supabase.from('store_items').delete().eq('id', id)
     if (error) setError(error.message)
-    else setItems((prev) => prev.filter((i) => i.id !== id))
+    else {
+      setItems((prev) => prev.filter((i) => i.id !== id))
+      if (editingItemId === id) resetItemForm()
+    }
   }
 
   async function handleFinish() {
@@ -358,12 +386,15 @@ function ItemCapture({
         costRates,
       })
       const blob = doc.output('blob')
-      const url = URL.createObjectURL(blob)
+      // Wrapping in a named File (not a plain Blob) so the browser's own PDF
+      // viewer "download" button, and integrations like "Save to Drive",
+      // pick up the right filename — a PDF's internal title metadata isn't
+      // reliably honored for that, but a File's name generally is.
+      const file = new File([blob], reportFilename(store), { type: 'application/pdf' })
+      const url = URL.createObjectURL(file)
 
       window.open(url, '_blank')
 
-      // Browser PDF viewers don't reliably use a PDF's internal metadata for
-      // "Save As" filenames, so save a correctly-named copy directly.
       const link = document.createElement('a')
       link.href = url
       link.download = reportFilename(store)
@@ -398,10 +429,12 @@ function ItemCapture({
       )}
 
       <form
-        onSubmit={handleAddItem}
+        onSubmit={handleSubmitItem}
         className="flex flex-col gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-800"
       >
-        <h2 className="text-sm font-medium text-slate-700 dark:text-slate-300">Add a case or line-up</h2>
+        <h2 className="text-sm font-medium text-slate-700 dark:text-slate-300">
+          {editingItemId ? 'Edit case or line-up' : 'Add a case or line-up'}
+        </h2>
 
         <label className="flex flex-col gap-1">
           <span className="text-sm text-slate-600 dark:text-slate-400">Category</span>
@@ -484,13 +517,24 @@ function ItemCapture({
           />
         </label>
 
-        <button
-          type="submit"
-          disabled={saving}
-          className="rounded-lg bg-slate-900 p-3 font-medium text-white disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
-        >
-          Add to store
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex-1 rounded-lg bg-slate-900 p-3 font-medium text-white disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
+          >
+            {editingItemId ? 'Save changes' : 'Add to store'}
+          </button>
+          {editingItemId && (
+            <button
+              type="button"
+              onClick={resetItemForm}
+              className="rounded-lg border border-slate-300 px-4 py-2 dark:border-slate-700"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
       </form>
 
       <section className="flex flex-col gap-2">
@@ -524,12 +568,20 @@ function ItemCapture({
                   </div>
                 )}
               </div>
+              <div className="flex flex-col items-end gap-1">
+              <button
+                onClick={() => startEditItem(item)}
+                className="text-sm text-slate-500 hover:underline"
+              >
+                Edit
+              </button>
               <button
                 onClick={() => handleDeleteItem(item.id)}
                 className="text-sm text-red-500 hover:underline"
               >
                 Remove
               </button>
+              </div>
             </div>
           )
         })}

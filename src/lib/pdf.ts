@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf'
 import { calculatePaybackYears, calculateSavings } from './calculate'
 import { resolveCost } from './costs'
+import { formatKwh, formatNumber, formatRand } from './format'
 import type {
   AppSettings,
   CaseType,
@@ -25,9 +26,11 @@ interface ReportContext {
 
 const MARGIN = 14
 const LINE_HEIGHT = 4.2
-const HEADER_MAX_HEIGHT = 22
-const FOOTER_MAX_HEIGHT = 15
-const FOOTER_PADDING = 6
+// Header/footer images render as a slim banner strip, not a large block —
+// keeps most of the page for the actual report content.
+const HEADER_MAX_HEIGHT = 12
+const FOOTER_MAX_HEIGHT = 8
+const IMAGE_PADDING = 4
 
 // x-position, width (mm) for each column — cumulative widths sum to 168mm,
 // comfortably inside A4's 182mm usable width (210mm page - 14mm margins
@@ -108,12 +111,19 @@ export async function generateStoreReport(ctx: ReportContext) {
 
   const headerDims = headerImg ? fitDimensions(headerImg, contentWidth, HEADER_MAX_HEIGHT) : null
   const footerDims = footerImg ? fitDimensions(footerImg, contentWidth, FOOTER_MAX_HEIGHT) : null
-  const contentStartY = headerDims ? 8 + headerDims.h + 6 : 20
-  const footerReserve = footerDims ? footerDims.h + FOOTER_PADDING * 2 : 12
+  const contentStartY = headerDims ? IMAGE_PADDING + headerDims.h + IMAGE_PADDING : 20
+  const footerReserve = footerDims ? footerDims.h + IMAGE_PADDING * 2 : 12
 
   function drawHeaderImage() {
     if (headerImg && headerDims) {
-      doc.addImage(headerImg.dataUrl, 'JPEG', MARGIN + (contentWidth - headerDims.w) / 2, 8, headerDims.w, headerDims.h)
+      doc.addImage(
+        headerImg.dataUrl,
+        'JPEG',
+        MARGIN + (contentWidth - headerDims.w) / 2,
+        IMAGE_PADDING,
+        headerDims.w,
+        headerDims.h,
+      )
     }
   }
 
@@ -135,7 +145,7 @@ export async function generateStoreReport(ctx: ReportContext) {
   y += 6
   doc.text(`Door type: ${doorType.name} (${doorType.energy_saving_percent}% saving)`, MARGIN, y)
   y += 6
-  doc.text(`Electricity rate: R ${store.electricity_rate.toFixed(2)} / kWh`, MARGIN, y)
+  doc.text(`Electricity rate: ${formatRand(store.electricity_rate)} / kWh`, MARGIN, y)
   y += 10
 
   function drawTableHeader() {
@@ -188,9 +198,9 @@ export async function generateStoreReport(ctx: ReportContext) {
       caseType.name,
       item.qty_ft.toString(),
       options || '—',
-      result.annualSavingsKwh.toFixed(0),
-      result.annualCostSaving.toFixed(0),
-      upgradeCost.toFixed(0),
+      formatNumber(result.annualSavingsKwh),
+      formatNumber(result.annualCostSaving),
+      formatNumber(upgradeCost),
     ]
 
     const wrappedCells = cellValues.map((value, i) => doc.splitTextToSize(value, COLUMNS[i].width))
@@ -237,11 +247,11 @@ export async function generateStoreReport(ctx: ReportContext) {
 
   doc.setFontSize(11)
   doc.setFont('helvetica', 'bold')
-  doc.text(`Total annual energy saved: ${totalAnnualKwh.toFixed(0)} kWh`, MARGIN, y)
+  doc.text(`Total annual energy saved: ${formatKwh(totalAnnualKwh)}`, MARGIN, y)
   y += 6
-  doc.text(`Total annual cost saved: R ${totalAnnualCost.toFixed(0)}`, MARGIN, y)
+  doc.text(`Total annual cost saved: ${formatRand(totalAnnualCost)}`, MARGIN, y)
   y += 6
-  doc.text(`Total upgrade investment: R ${totalUpgradeCost.toFixed(0)}`, MARGIN, y)
+  doc.text(`Total upgrade investment: ${formatRand(totalUpgradeCost)}`, MARGIN, y)
   y += 6
 
   const paybackYears = calculatePaybackYears(
@@ -276,7 +286,7 @@ export async function generateStoreReport(ctx: ReportContext) {
         footerImg.dataUrl,
         'JPEG',
         MARGIN + (contentWidth - footerDims.w) / 2,
-        pageHeight - footerDims.h - FOOTER_PADDING,
+        pageHeight - footerDims.h - IMAGE_PADDING,
         footerDims.w,
         footerDims.h,
       )
