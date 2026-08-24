@@ -604,7 +604,7 @@ function CaseTypesSection() {
 
 // --- Door types ---
 
-const emptyDoorForm = { name: '', cost_4ft: '', cost_5ft: '', cost_7ft: '' }
+const emptyDoorForm = { name: '', cost_4ft: '', cost_5ft: '', cost_7ft: '', heater_watts_per_ft: '' }
 
 function DoorTypesSection() {
   const [items, setItems] = useState<DoorType[]>([])
@@ -633,6 +633,7 @@ function DoorTypesSection() {
       cost_4ft: item.cost_4ft.toString(),
       cost_5ft: item.cost_5ft.toString(),
       cost_7ft: item.cost_7ft.toString(),
+      heater_watts_per_ft: item.heater_watts_per_ft.toString(),
     })
   }
 
@@ -651,6 +652,7 @@ function DoorTypesSection() {
       cost_4ft: Number(form.cost_4ft) || 0,
       cost_5ft: Number(form.cost_5ft) || 0,
       cost_7ft: Number(form.cost_7ft) || 0,
+      heater_watts_per_ft: Number(form.heater_watts_per_ft) || 0,
     }
 
     const { error } = editingId
@@ -709,7 +711,18 @@ function DoorTypesSection() {
             type="number"
             required
           />
+          <Field
+            label="Heater consumption (W/ft)"
+            value={form.heater_watts_per_ft}
+            onChange={(v) => setForm({ ...form, heater_watts_per_ft: v })}
+            type="number"
+          />
         </div>
+        <p className="text-xs text-slate-400">
+          Only for heated glass doors — draws power directly (not through the compressor) to
+          prevent condensation, offsetting some of the energy savings. Leave at 0 for unheated
+          doors.
+        </p>
         <div className="flex gap-2">
           <button
             type="submit"
@@ -744,6 +757,7 @@ function DoorTypesSection() {
               <div className="font-medium text-slate-900 dark:text-slate-100">{item.name}</div>
               <div className="text-xs text-slate-500">
                 R{item.cost_4ft}/4ft, R{item.cost_5ft}/5ft, R{item.cost_7ft}/7ft
+                {item.heater_watts_per_ft > 0 && ` · Heated (${item.heater_watts_per_ft} W/ft)`}
               </div>
             </div>
             <div className="flex gap-2">

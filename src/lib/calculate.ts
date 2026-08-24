@@ -1,9 +1,10 @@
-import type { CalculationResult, CaseType, PlantType } from '../types'
+import type { CalculationResult, CaseType, DoorType, PlantType } from '../types'
 
 const HOURS_PER_DAY = 24 // continuous-run assumption, matches source spreadsheet
 
 export function calculateSavings(
   caseType: CaseType,
+  doorType: DoorType,
   plantType: PlantType,
   qtyFt: number,
   electricityRate: number,
@@ -12,7 +13,10 @@ export function calculateSavings(
     caseType.w_per_ft_without_doors * (1 - caseType.savings_percent / 100)
 
   const electricalWWithoutDoors = caseType.w_per_ft_without_doors / plantType.cop
-  const electricalWWithDoors = wPerFtWithDoors / plantType.cop
+  // Anti-condensation heaters on heated glass draw power directly, not
+  // through the compressor — added straight to the with-doors electrical
+  // load rather than divided by COP.
+  const electricalWWithDoors = wPerFtWithDoors / plantType.cop + doorType.heater_watts_per_ft
 
   const dailyKwhWithout =
     (electricalWWithoutDoors * qtyFt * HOURS_PER_DAY) / 1000

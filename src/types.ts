@@ -23,6 +23,7 @@ export interface DoorType {
   cost_4ft: number
   cost_5ft: number
   cost_7ft: number
+  heater_watts_per_ft: number
 }
 
 export interface AppSettings {
