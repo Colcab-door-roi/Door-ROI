@@ -32,6 +32,8 @@ export interface AppSettings {
   legal_disclaimer: string
   header_image_url: string | null
   footer_image_url: string | null
+  subassembly_transport_labour_cost_4ft: number
+  outlying_labour_cost_4ft: number
 }
 
 export type CostType = 'reclad' | 'canopy_led' | 'undershelf_led'
@@ -52,6 +54,7 @@ export interface StoreVisit {
   plant_type_id: string
   door_type_id: string
   electricity_rate: number
+  outlying: boolean
 }
 
 export interface StoreItem {

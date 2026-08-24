@@ -162,6 +162,7 @@ export async function generateStoreReport(ctx: ReportContext) {
   let totalAnnualKwh = 0
   let totalAnnualCost = 0
   let totalUpgradeCost = 0
+  let totalFt = 0
 
   for (const item of items) {
     const caseType = caseTypes.find((c) => c.id === item.case_type_id)
@@ -178,6 +179,7 @@ export async function generateStoreReport(ctx: ReportContext) {
     totalAnnualKwh += result.annualSavingsKwh
     totalAnnualCost += result.annualCostSaving
     totalUpgradeCost += upgradeCost
+    totalFt += item.qty_ft
 
     const options = [
       item.reclad ? 'Reclad' : '',
@@ -229,7 +231,14 @@ export async function generateStoreReport(ctx: ReportContext) {
     y += 3
   }
 
-  if (y + 40 > pageHeight - footerReserve) {
+  // Store-wide costs (not per-item): always-on subassembly/transport/labour,
+  // plus outlying labour if this survey is flagged outlying. Both price per
+  // 4ft section, applied to the survey's total footage across all cases.
+  const subassemblyCost = (totalFt / 4) * settings.subassembly_transport_labour_cost_4ft
+  const outlyingCost = store.outlying ? (totalFt / 4) * settings.outlying_labour_cost_4ft : 0
+  totalUpgradeCost += subassemblyCost + outlyingCost
+
+  if (y + 55 > pageHeight - footerReserve) {
     doc.addPage()
     y = contentStartY
     drawHeaderImage()
@@ -245,6 +254,12 @@ export async function generateStoreReport(ctx: ReportContext) {
   y += 6
   doc.text(`Total annual cost saved: ${formatRand(totalAnnualCost)}`, MARGIN, y)
   y += 6
+  doc.text(`Subassembly, transport & labour: ${formatRand(subassemblyCost)}`, MARGIN, y)
+  y += 6
+  if (store.outlying) {
+    doc.text(`Outlying labour: ${formatRand(outlyingCost)}`, MARGIN, y)
+    y += 6
+  }
   doc.text(`Total upgrade investment: ${formatRand(totalUpgradeCost)}`, MARGIN, y)
   y += 6
 

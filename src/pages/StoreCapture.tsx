@@ -116,6 +116,7 @@ function StoreProfileForm({
   const [plantTypeId, setPlantTypeId] = useState(plantTypes[0]?.id ?? '')
   const [doorTypeId, setDoorTypeId] = useState(doorTypes[0]?.id ?? '')
   const [rate, setRate] = useState(defaultRate.toString())
+  const [outlying, setOutlying] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -132,6 +133,7 @@ function StoreProfileForm({
         plant_type_id: plantTypeId,
         door_type_id: doorTypeId,
         electricity_rate: Number(rate) || 0,
+        outlying,
       })
       .select()
       .single()
@@ -251,6 +253,11 @@ function StoreProfileForm({
             onChange={(e) => setRate(e.target.value)}
             className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
           />
+        </label>
+
+        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+          <input type="checkbox" checked={outlying} onChange={(e) => setOutlying(e.target.checked)} />
+          Outlying (adds outlying labour cost to the whole survey)
         </label>
 
         <button
@@ -415,6 +422,7 @@ function ItemCapture({
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
             {store.sales_rep_name} · {store.visit_date} · {plantType?.name} · {doorType?.name}
+            {store.outlying && ' · Outlying'}
           </p>
         </div>
         <button onClick={onNewStore} className="text-sm text-slate-400 hover:underline">

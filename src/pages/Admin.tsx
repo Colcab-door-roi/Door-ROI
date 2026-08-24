@@ -131,6 +131,8 @@ function SettingsSection() {
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [rate, setRate] = useState('')
   const [priceIncrease, setPriceIncrease] = useState('')
+  const [subassemblyCost, setSubassemblyCost] = useState('')
+  const [outlyingCost, setOutlyingCost] = useState('')
   const [disclaimer, setDisclaimer] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -145,6 +147,8 @@ function SettingsSection() {
       setSettings(data)
       setRate(data.default_electricity_rate.toString())
       setPriceIncrease(data.annual_price_increase_percent.toString())
+      setSubassemblyCost(data.subassembly_transport_labour_cost_4ft.toString())
+      setOutlyingCost(data.outlying_labour_cost_4ft.toString())
       setDisclaimer(data.legal_disclaimer ?? '')
     }
     setLoading(false)
@@ -164,6 +168,8 @@ function SettingsSection() {
       .update({
         default_electricity_rate: Number(rate) || 0,
         annual_price_increase_percent: Number(priceIncrease) || 0,
+        subassembly_transport_labour_cost_4ft: Number(subassemblyCost) || 0,
+        outlying_labour_cost_4ft: Number(outlyingCost) || 0,
         legal_disclaimer: disclaimer,
       })
       .eq('id', true)
@@ -216,6 +222,23 @@ function SettingsSection() {
           onChange={setPriceIncrease}
           type="number"
         />
+        <Field
+          label="Subassembly, transport & labour cost (R per 4ft)"
+          value={subassemblyCost}
+          onChange={setSubassemblyCost}
+          type="number"
+        />
+        <Field
+          label="Outlying labour cost (R per 4ft)"
+          value={outlyingCost}
+          onChange={setOutlyingCost}
+          type="number"
+        />
+        <p className="text-xs text-slate-400">
+          Both apply to the survey's total footage across all cases (total ft ÷ 4 × cost) —
+          subassembly/transport/labour always applies; outlying labour only when the survey is
+          flagged "Outlying".
+        </p>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-slate-600 dark:text-slate-400">Legal disclaimer (shown on PDF reports)</span>
           <textarea
