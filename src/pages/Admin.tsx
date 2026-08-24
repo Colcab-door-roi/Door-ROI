@@ -450,6 +450,7 @@ function CategoriesSection() {
 const emptyCaseForm = {
   name: '',
   w_per_ft_without_doors: '',
+  savings_percent: '',
   notes: '',
 }
 
@@ -481,6 +482,7 @@ function CaseTypesSection() {
     setForm({
       name: item.name,
       w_per_ft_without_doors: item.w_per_ft_without_doors.toString(),
+      savings_percent: item.savings_percent.toString(),
       notes: item.notes ?? '',
     })
   }
@@ -498,6 +500,7 @@ function CaseTypesSection() {
     const payload = {
       name: form.name,
       w_per_ft_without_doors: Number(form.w_per_ft_without_doors) || 0,
+      savings_percent: Number(form.savings_percent) || 0,
       notes: form.notes || null,
     }
 
@@ -539,6 +542,13 @@ function CaseTypesSection() {
             type="number"
             required
           />
+          <Field
+            label="Door saving (%)"
+            value={form.savings_percent}
+            onChange={(v) => setForm({ ...form, savings_percent: v })}
+            type="number"
+            required
+          />
           <Field label="Notes" value={form.notes} onChange={(v) => setForm({ ...form, notes: v })} />
         </div>
         <div className="flex gap-2">
@@ -573,7 +583,9 @@ function CaseTypesSection() {
           >
             <div>
               <div className="font-medium text-slate-900 dark:text-slate-100">{item.name}</div>
-              <div className="text-xs text-slate-500">{item.w_per_ft_without_doors} W/ft</div>
+              <div className="text-xs text-slate-500">
+                {item.w_per_ft_without_doors} W/ft, {item.savings_percent}% saving
+              </div>
             </div>
             <div className="flex gap-2">
               <button onClick={() => startEdit(item)} className="text-sm text-slate-500 hover:underline">
@@ -592,7 +604,7 @@ function CaseTypesSection() {
 
 // --- Door types ---
 
-const emptyDoorForm = { name: '', cost_4ft: '', cost_5ft: '', cost_7ft: '', energy_saving_percent: '' }
+const emptyDoorForm = { name: '', cost_4ft: '', cost_5ft: '', cost_7ft: '' }
 
 function DoorTypesSection() {
   const [items, setItems] = useState<DoorType[]>([])
@@ -621,7 +633,6 @@ function DoorTypesSection() {
       cost_4ft: item.cost_4ft.toString(),
       cost_5ft: item.cost_5ft.toString(),
       cost_7ft: item.cost_7ft.toString(),
-      energy_saving_percent: item.energy_saving_percent.toString(),
     })
   }
 
@@ -640,7 +651,6 @@ function DoorTypesSection() {
       cost_4ft: Number(form.cost_4ft) || 0,
       cost_5ft: Number(form.cost_5ft) || 0,
       cost_7ft: Number(form.cost_7ft) || 0,
-      energy_saving_percent: Number(form.energy_saving_percent) || 0,
     }
 
     const { error } = editingId
@@ -678,13 +688,6 @@ function DoorTypesSection() {
         </h3>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} required />
-          <Field
-            label="Energy saving (%)"
-            value={form.energy_saving_percent}
-            onChange={(v) => setForm({ ...form, energy_saving_percent: v })}
-            type="number"
-            required
-          />
           <Field
             label="4ft cost (R)"
             value={form.cost_4ft}
@@ -740,8 +743,7 @@ function DoorTypesSection() {
             <div>
               <div className="font-medium text-slate-900 dark:text-slate-100">{item.name}</div>
               <div className="text-xs text-slate-500">
-                {item.energy_saving_percent}% saving · R{item.cost_4ft}/4ft, R{item.cost_5ft}/5ft, R
-                {item.cost_7ft}/7ft
+                R{item.cost_4ft}/4ft, R{item.cost_5ft}/5ft, R{item.cost_7ft}/7ft
               </div>
             </div>
             <div className="flex gap-2">

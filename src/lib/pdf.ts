@@ -135,7 +135,7 @@ export async function generateStoreReport(ctx: ReportContext) {
   y += 6
   doc.text(`Refrigeration plant: ${plantType.name} (COP ${plantType.cop})`, MARGIN, y)
   y += 6
-  doc.text(`Door type: ${doorType.name} (${doorType.energy_saving_percent}% saving)`, MARGIN, y)
+  doc.text(`Door type: ${doorType.name}`, MARGIN, y)
   y += 6
   doc.text(`Electricity rate: ${formatRand(store.electricity_rate)} / kWh`, MARGIN, y)
   y += 10
@@ -166,7 +166,7 @@ export async function generateStoreReport(ctx: ReportContext) {
     const category = categories.find((c) => c.id === item.category_id)
     if (!caseType) continue
 
-    const result = calculateSavings(caseType, doorType, plantType, item.qty_ft, store.electricity_rate)
+    const result = calculateSavings(caseType, plantType, item.qty_ft, store.electricity_rate)
     const upgradeCost =
       resolveCost(doorType, item.qty_ft) +
       (item.reclad && recladRate ? resolveCost(recladRate, item.qty_ft) : 0) +

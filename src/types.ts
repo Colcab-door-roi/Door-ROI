@@ -7,6 +7,7 @@ export interface CaseType {
   id: string
   name: string
   w_per_ft_without_doors: number
+  savings_percent: number
   notes: string | null
 }
 
@@ -22,7 +23,6 @@ export interface DoorType {
   cost_4ft: number
   cost_5ft: number
   cost_7ft: number
-  energy_saving_percent: number
 }
 
 export interface AppSettings {

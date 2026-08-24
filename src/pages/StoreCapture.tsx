@@ -232,7 +232,7 @@ function StoreProfileForm({
           >
             {doorTypes.map((d) => (
               <option key={d.id} value={d.id}>
-                {d.name} ({d.energy_saving_percent}% saving)
+                {d.name}
               </option>
             ))}
           </select>

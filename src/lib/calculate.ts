@@ -1,16 +1,15 @@
-import type { CalculationResult, CaseType, DoorType, PlantType } from '../types'
+import type { CalculationResult, CaseType, PlantType } from '../types'
 
 const HOURS_PER_DAY = 24 // continuous-run assumption, matches source spreadsheet
 
 export function calculateSavings(
   caseType: CaseType,
-  doorType: DoorType,
   plantType: PlantType,
   qtyFt: number,
   electricityRate: number,
 ): CalculationResult {
   const wPerFtWithDoors =
-    caseType.w_per_ft_without_doors * (1 - doorType.energy_saving_percent / 100)
+    caseType.w_per_ft_without_doors * (1 - caseType.savings_percent / 100)
 
   const electricalWWithoutDoors = caseType.w_per_ft_without_doors / plantType.cop
   const electricalWWithDoors = wPerFtWithDoors / plantType.cop
