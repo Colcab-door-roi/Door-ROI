@@ -26,10 +26,6 @@ interface ReportContext {
 
 const MARGIN = 14
 const LINE_HEIGHT = 4.2
-// Header/footer images render as a slim banner strip, not a large block —
-// keeps most of the page for the actual report content.
-const HEADER_MAX_HEIGHT = 12
-const FOOTER_MAX_HEIGHT = 8
 const IMAGE_PADDING = 4
 
 // x-position, width (mm) for each column — cumulative widths sum to 168mm,
@@ -80,15 +76,11 @@ function loadImage(url: string): Promise<LoadedImage | null> {
     .catch(() => null)
 }
 
-function fitDimensions(img: LoadedImage, maxWidth: number, maxHeight: number) {
-  const aspect = img.width / img.height
-  let w = maxWidth
-  let h = w / aspect
-  if (h > maxHeight) {
-    h = maxHeight
-    w = h * aspect
-  }
-  return { w, h }
+// Header/footer banners always span the full content width (page width
+// minus the narrow page margin) — height simply follows from the image's
+// own aspect ratio at that width.
+function fitToWidth(img: LoadedImage, width: number) {
+  return { w: width, h: width / (img.width / img.height) }
 }
 
 export async function generateStoreReport(ctx: ReportContext) {
@@ -109,8 +101,8 @@ export async function generateStoreReport(ctx: ReportContext) {
   const pageHeight = doc.internal.pageSize.getHeight()
   const contentWidth = pageWidth - MARGIN * 2
 
-  const headerDims = headerImg ? fitDimensions(headerImg, contentWidth, HEADER_MAX_HEIGHT) : null
-  const footerDims = footerImg ? fitDimensions(footerImg, contentWidth, FOOTER_MAX_HEIGHT) : null
+  const headerDims = headerImg ? fitToWidth(headerImg, contentWidth) : null
+  const footerDims = footerImg ? fitToWidth(footerImg, contentWidth) : null
   const contentStartY = headerDims ? IMAGE_PADDING + headerDims.h + IMAGE_PADDING : 20
   const footerReserve = footerDims ? footerDims.h + IMAGE_PADDING * 2 : 12
 
