@@ -9,8 +9,6 @@ export interface CaseType {
   w_per_ft_without_doors: number
   savings_percent: number
   notes: string | null
-  is_gdf: boolean
-  gdf_watts_per_door: number
 }
 
 export interface PlantType {
@@ -29,7 +27,9 @@ export interface DoorType {
 }
 
 export interface CasemSettings {
+  baseline_watts_per_door: number
   cost_per_unit: number
+  installation_cost_per_unit: number
   savings_percent: number
 }
 
@@ -69,7 +69,8 @@ export interface StoreItem {
   id: string
   store_visit_id: string
   category_id: string
-  case_type_id: string
+  case_type_id: string | null
+  is_gdf: boolean
   qty_ft: number | null
   qty_doors: number | null
   qty_gdf_units: number | null

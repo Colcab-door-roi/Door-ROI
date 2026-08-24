@@ -284,6 +284,7 @@ function StoreProfileForm({
 }
 
 const emptyItemForm = {
+  isGdf: false,
   categoryId: '',
   caseTypeId: '',
   qtyFt: '',
@@ -330,8 +331,6 @@ function ItemCapture({
 
   const plantType = plantTypes.find((p) => p.id === store.plant_type_id)
   const doorType = doorTypes.find((d) => d.id === store.door_type_id)
-  const selectedCaseType = caseTypes.find((c) => c.id === form.caseTypeId)
-  const isGdf = selectedCaseType?.is_gdf ?? false
 
   function resetItemForm() {
     setEditingItemId(null)
@@ -341,8 +340,9 @@ function ItemCapture({
   function startEditItem(item: StoreItem) {
     setEditingItemId(item.id)
     setForm({
+      isGdf: item.is_gdf,
       categoryId: item.category_id,
-      caseTypeId: item.case_type_id,
+      caseTypeId: item.case_type_id ?? '',
       qtyFt: item.qty_ft?.toString() ?? '',
       qtyDoors: item.qty_doors?.toString() ?? '',
       qtyGdfUnits: item.qty_gdf_units?.toString() ?? '',
@@ -357,15 +357,16 @@ function ItemCapture({
 
   async function handleSubmitItem(e: FormEvent) {
     e.preventDefault()
-    if (!form.categoryId || !form.caseTypeId) return
-    if (isGdf ? !form.qtyDoors || !form.qtyGdfUnits : !form.qtyFt) return
+    if (!form.categoryId) return
+    if (form.isGdf ? !form.qtyDoors || !form.qtyGdfUnits : !form.caseTypeId || !form.qtyFt) return
     setSaving(true)
     setError(null)
 
-    const payload = isGdf
+    const payload = form.isGdf
       ? {
           category_id: form.categoryId,
-          case_type_id: form.caseTypeId,
+          case_type_id: null,
+          is_gdf: true,
           qty_ft: null,
           qty_doors: Number(form.qtyDoors) || 0,
           qty_gdf_units: Number(form.qtyGdfUnits) || 0,
@@ -379,6 +380,7 @@ function ItemCapture({
       : {
           category_id: form.categoryId,
           case_type_id: form.caseTypeId,
+          is_gdf: false,
           qty_ft: Number(form.qtyFt) || 0,
           qty_doors: null,
           qty_gdf_units: null,
@@ -487,6 +489,31 @@ function ItemCapture({
           {editingItemId ? 'Edit case or line-up' : 'Add a case or line-up'}
         </h2>
 
+        <div className="flex gap-2 rounded-lg border border-slate-300 p-1 dark:border-slate-700">
+          <button
+            type="button"
+            onClick={() => setForm({ ...emptyItemForm, categoryId: form.categoryId, isGdf: false })}
+            className={`flex-1 rounded-md p-2 text-sm font-medium ${
+              !form.isGdf
+                ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                : 'text-slate-600 dark:text-slate-400'
+            }`}
+          >
+            Case / Line-up
+          </button>
+          <button
+            type="button"
+            onClick={() => setForm({ ...emptyItemForm, categoryId: form.categoryId, isGdf: true })}
+            className={`flex-1 rounded-md p-2 text-sm font-medium ${
+              form.isGdf
+                ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                : 'text-slate-600 dark:text-slate-400'
+            }`}
+          >
+            GDF
+          </button>
+        </div>
+
         <label className="flex flex-col gap-1">
           <span className="text-sm text-slate-600 dark:text-slate-400">Category</span>
           <select
@@ -504,25 +531,26 @@ function ItemCapture({
           </select>
         </label>
 
-        <label className="flex flex-col gap-1">
-          <span className="text-sm text-slate-600 dark:text-slate-400">Case type</span>
-          <select
-            required
-            value={form.caseTypeId}
-            onChange={(e) => setForm({ ...form, caseTypeId: e.target.value })}
-            className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-          >
-            <option value="">— select —</option>
-            {caseTypes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-                {c.is_gdf ? ' (GDF)' : ''}
-              </option>
-            ))}
-          </select>
-        </label>
+        {!form.isGdf && (
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-slate-600 dark:text-slate-400">Case type</span>
+            <select
+              required
+              value={form.caseTypeId}
+              onChange={(e) => setForm({ ...form, caseTypeId: e.target.value })}
+              className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            >
+              <option value="">— select —</option>
+              {caseTypes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
-        {isGdf ? (
+        {form.isGdf ? (
           <>
             <label className="flex flex-col gap-1">
               <span className="text-sm text-slate-600 dark:text-slate-400">Number of doors</span>
@@ -657,7 +685,6 @@ function ItemCapture({
         {items.map((item) => {
           const caseType = caseTypes.find((c) => c.id === item.case_type_id)
           const category = categories.find((c) => c.id === item.category_id)
-          const itemIsGdf = caseType?.is_gdf ?? false
           return (
             <div
               key={item.id}
@@ -665,10 +692,10 @@ function ItemCapture({
             >
               <div>
                 <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                  {category?.name} — {caseType?.name}
+                  {category?.name} — {item.is_gdf ? 'GDF' : caseType?.name}
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">
-                  {itemIsGdf ? (
+                  {item.is_gdf ? (
                     <>
                       {item.qty_doors} doors / {item.qty_gdf_units} units
                       {item.casem && ' · Casem'}

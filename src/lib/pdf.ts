@@ -167,29 +167,27 @@ export async function generateStoreReport(ctx: ReportContext) {
   let totalFt = 0
 
   for (const item of items) {
-    const caseType = caseTypes.find((c) => c.id === item.case_type_id)
     const category = categories.find((c) => c.id === item.category_id)
-    if (!caseType) continue
 
     let result = ZERO_RESULT
     let upgradeCost = 0
     let qtyDisplay = ''
     let options = ''
+    let caseTypeName = ''
 
-    if (caseType.is_gdf) {
+    if (item.is_gdf) {
       const qtyDoors = item.qty_doors ?? 0
       const qtyUnits = item.qty_gdf_units ?? 0
-      result = calculateGdfCasemSavings(
-        caseType,
-        qtyDoors,
-        casemSettings,
-        item.casem,
-        store.electricity_rate,
-      )
-      upgradeCost = item.casem ? casemSettings.cost_per_unit * qtyUnits : 0
+      result = calculateGdfCasemSavings(qtyDoors, casemSettings, item.casem, store.electricity_rate)
+      upgradeCost = item.casem
+        ? (casemSettings.cost_per_unit + casemSettings.installation_cost_per_unit) * qtyUnits
+        : 0
       qtyDisplay = `${qtyDoors} dr / ${qtyUnits}u`
       options = item.casem ? 'Casem' : '—'
+      caseTypeName = 'GDF'
     } else {
+      const caseType = caseTypes.find((c) => c.id === item.case_type_id)
+      if (!caseType) continue
       const qtyFt = item.qty_ft ?? 0
       result = item.doors
         ? calculateSavings(caseType, doorType, plantType, qtyFt, store.electricity_rate)
@@ -201,6 +199,7 @@ export async function generateStoreReport(ctx: ReportContext) {
         (item.undershelf_led && undershelfRate ? resolveCost(undershelfRate, qtyFt) : 0)
       qtyDisplay = `${qtyFt} ft`
       totalFt += qtyFt
+      caseTypeName = caseType.name
       options =
         [
           item.doors ? '' : 'No Doors',
@@ -218,7 +217,7 @@ export async function generateStoreReport(ctx: ReportContext) {
 
     const cellValues = [
       category?.name ?? '—',
-      caseType.name,
+      caseTypeName,
       qtyDisplay,
       options,
       formatNumber(result.annualSavingsKwh),

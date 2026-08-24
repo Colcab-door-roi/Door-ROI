@@ -41,19 +41,18 @@ export function calculateSavings(
 }
 
 // GDF (Glass Door Freezer) doors are already fitted — there's no "with vs
-// without doors" refrigeration comparison here. The case type carries its
-// own baseline door/frame electrical load (W/door, continuous, no Casem);
+// without doors" refrigeration comparison here. Admin sets a single global
+// baseline door/frame electrical load (W/door, continuous, no Casem);
 // Casem reduces that load by a % when selected, and only affects this
 // direct heater draw, not the W/ft refrigeration model — so this is a
 // separate calculation, not an extension of calculateSavings.
 export function calculateGdfCasemSavings(
-  caseType: CaseType,
   qtyDoors: number,
   casemSettings: CasemSettings,
   casemSelected: boolean,
   electricityRate: number,
 ): CalculationResult {
-  const baselineW = caseType.gdf_watts_per_door * qtyDoors
+  const baselineW = casemSettings.baseline_watts_per_door * qtyDoors
   const withCasemW = casemSelected ? baselineW * (1 - casemSettings.savings_percent / 100) : baselineW
 
   const dailyKwhWithout = (baselineW * HOURS_PER_DAY) / 1000
