@@ -1,9 +1,10 @@
 import { jsPDF } from 'jspdf'
-import { calculatePaybackYears, calculateSavings } from './calculate'
+import { calculateGdfCasemSavings, calculatePaybackYears, calculateSavings, ZERO_RESULT } from './calculate'
 import { resolveCost } from './costs'
 import { formatKwh, formatNumber, formatRand } from './format'
 import type {
   AppSettings,
+  CasemSettings,
   CaseType,
   Category,
   CostRate,
@@ -22,6 +23,7 @@ interface ReportContext {
   doorType: DoorType
   settings: AppSettings
   costRates: CostRate[]
+  casemSettings: CasemSettings
 }
 
 const MARGIN = 14
@@ -34,7 +36,7 @@ const IMAGE_PADDING = 4
 const COLUMNS = [
   { label: 'Category', x: 14, width: 22, align: 'left' as const },
   { label: 'Case type', x: 36, width: 32, align: 'left' as const },
-  { label: 'Length (ft)', x: 68, width: 16, align: 'left' as const },
+  { label: 'Qty', x: 68, width: 16, align: 'left' as const },
   { label: 'Options', x: 84, width: 32, align: 'left' as const },
   { label: 'kWh saved/yr', x: 116, width: 22, align: 'right' as const },
   { label: 'R saved/yr', x: 138, width: 22, align: 'right' as const },
@@ -84,7 +86,7 @@ function fitToWidth(img: LoadedImage, width: number) {
 }
 
 export async function generateStoreReport(ctx: ReportContext) {
-  const { store, items, caseTypes, categories, plantType, doorType, settings, costRates } = ctx
+  const { store, items, caseTypes, categories, plantType, doorType, settings, costRates, casemSettings } = ctx
   const recladRate = costRates.find((r) => r.cost_type === 'reclad')
   const canopyRate = costRates.find((r) => r.cost_type === 'canopy_led')
   const undershelfRate = costRates.find((r) => r.cost_type === 'undershelf_led')
@@ -169,34 +171,55 @@ export async function generateStoreReport(ctx: ReportContext) {
     const category = categories.find((c) => c.id === item.category_id)
     if (!caseType) continue
 
-    const result = calculateSavings(caseType, doorType, plantType, item.qty_ft, store.electricity_rate)
-    const upgradeCost =
-      resolveCost(doorType, item.qty_ft) +
-      (item.reclad && recladRate ? resolveCost(recladRate, item.qty_ft) : 0) +
-      (item.canopy_led && canopyRate ? resolveCost(canopyRate, item.qty_ft) : 0) +
-      (item.undershelf_led && undershelfRate ? resolveCost(undershelfRate, item.qty_ft) : 0)
+    let result = ZERO_RESULT
+    let upgradeCost = 0
+    let qtyDisplay = ''
+    let options = ''
+
+    if (caseType.is_gdf) {
+      const qtyDoors = item.qty_doors ?? 0
+      const qtyUnits = item.qty_gdf_units ?? 0
+      result = item.casem
+        ? calculateGdfCasemSavings(qtyDoors, casemSettings, store.electricity_rate)
+        : ZERO_RESULT
+      upgradeCost = item.casem ? casemSettings.cost_per_unit * qtyUnits : 0
+      qtyDisplay = `${qtyDoors} dr / ${qtyUnits}u`
+      options = item.casem ? 'Casem' : '—'
+    } else {
+      const qtyFt = item.qty_ft ?? 0
+      result = item.doors
+        ? calculateSavings(caseType, doorType, plantType, qtyFt, store.electricity_rate)
+        : ZERO_RESULT
+      upgradeCost =
+        (item.doors ? resolveCost(doorType, qtyFt) : 0) +
+        (item.reclad && recladRate ? resolveCost(recladRate, qtyFt) : 0) +
+        (item.canopy_led && canopyRate ? resolveCost(canopyRate, qtyFt) : 0) +
+        (item.undershelf_led && undershelfRate ? resolveCost(undershelfRate, qtyFt) : 0)
+      qtyDisplay = `${qtyFt} ft`
+      totalFt += qtyFt
+      options =
+        [
+          item.doors ? '' : 'No Doors',
+          item.reclad ? 'Reclad' : '',
+          item.canopy_led ? 'Canopy LED' : '',
+          item.undershelf_led ? 'Undershelf LED' : '',
+        ]
+          .filter(Boolean)
+          .join(', ') || '—'
+    }
 
     totalAnnualKwh += result.annualSavingsKwh
     totalAnnualCost += result.annualCostSaving
     totalUpgradeCost += upgradeCost
-    totalFt += item.qty_ft
-
-    const options = [
-      item.reclad ? 'Reclad' : '',
-      item.canopy_led ? 'Canopy LED' : '',
-      item.undershelf_led ? 'Undershelf LED' : '',
-    ]
-      .filter(Boolean)
-      .join(', ')
 
     const cellValues = [
       category?.name ?? '—',
       caseType.name,
-      item.qty_ft.toString(),
-      options || '—',
+      qtyDisplay,
+      options,
       formatNumber(result.annualSavingsKwh),
-      formatNumber(result.annualCostSaving),
-      formatNumber(upgradeCost),
+      formatRand(result.annualCostSaving),
+      formatRand(upgradeCost),
     ]
 
     const wrappedCells = cellValues.map((value, i) => doc.splitTextToSize(value, COLUMNS[i].width))
@@ -233,12 +256,16 @@ export async function generateStoreReport(ctx: ReportContext) {
 
   // Store-wide costs (not per-item): always-on subassembly/transport/labour,
   // plus outlying labour if this survey is flagged outlying. Both price per
-  // 4ft section, applied to the survey's total footage across all cases.
+  // 4ft section, applied to the survey's total ft-based footage (GDF doors
+  // aren't measured in feet, so they don't contribute to this total).
   const subassemblyCost = (totalFt / 4) * settings.subassembly_transport_labour_cost_4ft
   const outlyingCost = store.outlying ? (totalFt / 4) * settings.outlying_labour_cost_4ft : 0
   totalUpgradeCost += subassemblyCost + outlyingCost
 
-  if (y + 55 > pageHeight - footerReserve) {
+  const vatAmount = totalUpgradeCost * (settings.vat_percent / 100)
+  const totalInclVat = totalUpgradeCost + vatAmount
+
+  if (y + 70 > pageHeight - footerReserve) {
     doc.addPage()
     y = contentStartY
     drawHeaderImage()
@@ -260,7 +287,11 @@ export async function generateStoreReport(ctx: ReportContext) {
     doc.text(`Outlying labour: ${formatRand(outlyingCost)}`, MARGIN, y)
     y += 6
   }
-  doc.text(`Total upgrade investment: ${formatRand(totalUpgradeCost)}`, MARGIN, y)
+  doc.text(`Total upgrade investment (Excl. VAT): ${formatRand(totalUpgradeCost)}`, MARGIN, y)
+  y += 6
+  doc.text(`VAT (${settings.vat_percent}%): ${formatRand(vatAmount)}`, MARGIN, y)
+  y += 6
+  doc.text(`Total upgrade investment (Incl. VAT): ${formatRand(totalInclVat)}`, MARGIN, y)
   y += 6
 
   const paybackYears = calculatePaybackYears(
@@ -273,7 +304,11 @@ export async function generateStoreReport(ctx: ReportContext) {
       settings.annual_price_increase_percent > 0
         ? ` (assuming ${settings.annual_price_increase_percent}%/yr electricity price increase)`
         : ''
-    doc.text(`Estimated payback period: ${paybackYears.toFixed(1)} years${escalationNote}`, MARGIN, y)
+    doc.text(
+      `Estimated payback period: ${paybackYears.toFixed(1)} years (excl. VAT)${escalationNote}`,
+      MARGIN,
+      y,
+    )
     y += 6
   }
   doc.setFont('helvetica', 'normal')

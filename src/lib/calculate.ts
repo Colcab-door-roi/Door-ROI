@@ -1,6 +1,13 @@
-import type { CalculationResult, CaseType, DoorType, PlantType } from '../types'
+import type { CalculationResult, CaseType, CasemSettings, DoorType, PlantType } from '../types'
 
 const HOURS_PER_DAY = 24 // continuous-run assumption, matches source spreadsheet
+
+const ZERO_RESULT: CalculationResult = {
+  dailySavingsKwh: 0,
+  annualSavingsKwh: 0,
+  dailyCostSaving: 0,
+  annualCostSaving: 0,
+}
 
 export function calculateSavings(
   caseType: CaseType,
@@ -32,6 +39,30 @@ export function calculateSavings(
     annualCostSaving: annualSavingsKwh * electricityRate,
   }
 }
+
+// GDF (Glass Door Freezer) doors are already fitted — there's no "with vs
+// without doors" refrigeration comparison here. Casem only reduces the
+// doors' own anti-condensation heater draw (direct power, not through the
+// compressor), so this is a separate calculation, not an extension of
+// calculateSavings.
+export function calculateGdfCasemSavings(
+  qtyDoors: number,
+  casemSettings: CasemSettings,
+  electricityRate: number,
+): CalculationResult {
+  const dailySavingsKwh =
+    (casemSettings.savings_watts_per_door * qtyDoors * HOURS_PER_DAY) / 1000
+  const annualSavingsKwh = dailySavingsKwh * 365
+
+  return {
+    dailySavingsKwh,
+    annualSavingsKwh,
+    dailyCostSaving: dailySavingsKwh * electricityRate,
+    annualCostSaving: annualSavingsKwh * electricityRate,
+  }
+}
+
+export { ZERO_RESULT }
 
 const MAX_PAYBACK_YEARS = 50
 

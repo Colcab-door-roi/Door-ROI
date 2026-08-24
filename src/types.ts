@@ -9,6 +9,7 @@ export interface CaseType {
   w_per_ft_without_doors: number
   savings_percent: number
   notes: string | null
+  is_gdf: boolean
 }
 
 export interface PlantType {
@@ -26,6 +27,11 @@ export interface DoorType {
   heater_watts_per_ft: number
 }
 
+export interface CasemSettings {
+  cost_per_unit: number
+  savings_watts_per_door: number
+}
+
 export interface AppSettings {
   default_electricity_rate: number
   annual_price_increase_percent: number
@@ -34,6 +40,7 @@ export interface AppSettings {
   footer_image_url: string | null
   subassembly_transport_labour_cost_4ft: number
   outlying_labour_cost_4ft: number
+  vat_percent: number
 }
 
 export type CostType = 'reclad' | 'canopy_led' | 'undershelf_led'
@@ -62,10 +69,14 @@ export interface StoreItem {
   store_visit_id: string
   category_id: string
   case_type_id: string
-  qty_ft: number
+  qty_ft: number | null
+  qty_doors: number | null
+  qty_gdf_units: number | null
+  doors: boolean
   reclad: boolean
   canopy_led: boolean
   undershelf_led: boolean
+  casem: boolean
   notes: string | null
 }
 

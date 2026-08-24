@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { generateStoreReport, reportFilename } from '../lib/pdf'
 import type {
   AppSettings,
+  CasemSettings,
   CaseType,
   Category,
   CostRate,
@@ -27,22 +28,30 @@ export default function StoreCapture() {
   const [doorTypes, setDoorTypes] = useState<DoorType[]>([])
   const [costRates, setCostRates] = useState<CostRate[]>([])
   const [settings, setSettings] = useState<AppSettings | null>(null)
+  const [casemSettings, setCasemSettings] = useState<CasemSettings | null>(null)
 
   const [store, setStore] = useState<StoreVisit | null>(null)
   const [items, setItems] = useState<StoreItem[]>([])
 
   useEffect(() => {
     async function load() {
-      const [catRes, caseRes, plantRes, doorRes, costRes, settingsRes] = await Promise.all([
+      const [catRes, caseRes, plantRes, doorRes, costRes, settingsRes, casemRes] = await Promise.all([
         supabase.from('categories').select('*').order('name'),
         supabase.from('case_types').select('*').order('name'),
         supabase.from('plant_types').select('*').order('name'),
         supabase.from('door_types').select('*').order('name'),
         supabase.from('cost_rates').select('*'),
         supabase.from('app_settings').select('*').single(),
+        supabase.from('casem_settings').select('*').single(),
       ])
       const firstError =
-        catRes.error || caseRes.error || plantRes.error || doorRes.error || costRes.error || settingsRes.error
+        catRes.error ||
+        caseRes.error ||
+        plantRes.error ||
+        doorRes.error ||
+        costRes.error ||
+        settingsRes.error ||
+        casemRes.error
       if (firstError) {
         setError(firstError.message)
       } else {
@@ -52,6 +61,7 @@ export default function StoreCapture() {
         setDoorTypes(doorRes.data ?? [])
         setCostRates(costRes.data ?? [])
         setSettings(settingsRes.data)
+        setCasemSettings(casemRes.data)
       }
       setLoading(false)
     }
@@ -92,6 +102,7 @@ export default function StoreCapture() {
       doorTypes={doorTypes}
       costRates={costRates}
       settings={settings}
+      casemSettings={casemSettings}
       onNewStore={() => {
         setStore(null)
         setItems([])
@@ -238,7 +249,7 @@ function StoreProfileForm({
               </option>
             ))}
           </select>
-          <span className="text-xs text-slate-400">Applies to every case in this survey.</span>
+          <span className="text-xs text-slate-400">Applies to every non-GDF case in this survey.</span>
         </label>
 
         <label className="flex flex-col gap-1">
@@ -272,6 +283,20 @@ function StoreProfileForm({
   )
 }
 
+const emptyItemForm = {
+  categoryId: '',
+  caseTypeId: '',
+  qtyFt: '',
+  qtyDoors: '',
+  qtyGdfUnits: '',
+  doors: true,
+  reclad: false,
+  canopyLed: false,
+  undershelfLed: false,
+  casem: false,
+  notes: '',
+}
+
 function ItemCapture({
   store,
   items,
@@ -282,6 +307,7 @@ function ItemCapture({
   doorTypes,
   costRates,
   settings,
+  casemSettings,
   onNewStore,
 }: {
   store: StoreVisit
@@ -293,15 +319,10 @@ function ItemCapture({
   doorTypes: DoorType[]
   costRates: CostRate[]
   settings: AppSettings | null
+  casemSettings: CasemSettings | null
   onNewStore: () => void
 }) {
-  const [categoryId, setCategoryId] = useState('')
-  const [caseTypeId, setCaseTypeId] = useState('')
-  const [qtyFt, setQtyFt] = useState('')
-  const [reclad, setReclad] = useState(false)
-  const [canopyLed, setCanopyLed] = useState(false)
-  const [undershelfLed, setUndershelfLed] = useState(false)
-  const [notes, setNotes] = useState('')
+  const [form, setForm] = useState(emptyItemForm)
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -309,44 +330,65 @@ function ItemCapture({
 
   const plantType = plantTypes.find((p) => p.id === store.plant_type_id)
   const doorType = doorTypes.find((d) => d.id === store.door_type_id)
+  const selectedCaseType = caseTypes.find((c) => c.id === form.caseTypeId)
+  const isGdf = selectedCaseType?.is_gdf ?? false
 
   function resetItemForm() {
     setEditingItemId(null)
-    setCategoryId('')
-    setCaseTypeId('')
-    setQtyFt('')
-    setReclad(false)
-    setCanopyLed(false)
-    setUndershelfLed(false)
-    setNotes('')
+    setForm(emptyItemForm)
   }
 
   function startEditItem(item: StoreItem) {
     setEditingItemId(item.id)
-    setCategoryId(item.category_id)
-    setCaseTypeId(item.case_type_id)
-    setQtyFt(item.qty_ft.toString())
-    setReclad(item.reclad)
-    setCanopyLed(item.canopy_led)
-    setUndershelfLed(item.undershelf_led)
-    setNotes(item.notes ?? '')
+    setForm({
+      categoryId: item.category_id,
+      caseTypeId: item.case_type_id,
+      qtyFt: item.qty_ft?.toString() ?? '',
+      qtyDoors: item.qty_doors?.toString() ?? '',
+      qtyGdfUnits: item.qty_gdf_units?.toString() ?? '',
+      doors: item.doors,
+      reclad: item.reclad,
+      canopyLed: item.canopy_led,
+      undershelfLed: item.undershelf_led,
+      casem: item.casem,
+      notes: item.notes ?? '',
+    })
   }
 
   async function handleSubmitItem(e: FormEvent) {
     e.preventDefault()
-    if (!categoryId || !caseTypeId || !qtyFt) return
+    if (!form.categoryId || !form.caseTypeId) return
+    if (isGdf ? !form.qtyDoors || !form.qtyGdfUnits : !form.qtyFt) return
     setSaving(true)
     setError(null)
 
-    const payload = {
-      category_id: categoryId,
-      case_type_id: caseTypeId,
-      qty_ft: Number(qtyFt) || 0,
-      reclad,
-      canopy_led: canopyLed,
-      undershelf_led: undershelfLed,
-      notes: notes || null,
-    }
+    const payload = isGdf
+      ? {
+          category_id: form.categoryId,
+          case_type_id: form.caseTypeId,
+          qty_ft: null,
+          qty_doors: Number(form.qtyDoors) || 0,
+          qty_gdf_units: Number(form.qtyGdfUnits) || 0,
+          doors: false,
+          reclad: false,
+          canopy_led: false,
+          undershelf_led: false,
+          casem: form.casem,
+          notes: form.notes || null,
+        }
+      : {
+          category_id: form.categoryId,
+          case_type_id: form.caseTypeId,
+          qty_ft: Number(form.qtyFt) || 0,
+          qty_doors: null,
+          qty_gdf_units: null,
+          doors: form.doors,
+          reclad: form.reclad,
+          canopy_led: form.canopyLed,
+          undershelf_led: form.undershelfLed,
+          casem: false,
+          notes: form.notes || null,
+        }
 
     const { data, error } = editingItemId
       ? await supabase.from('store_items').update(payload).eq('id', editingItemId).select().single()
@@ -379,7 +421,7 @@ function ItemCapture({
   }
 
   async function handleFinish() {
-    if (!plantType || !doorType || !settings) return
+    if (!plantType || !doorType || !settings || !casemSettings) return
     setGenerating(true)
     try {
       const doc = await generateStoreReport({
@@ -391,6 +433,7 @@ function ItemCapture({
         doorType,
         settings,
         costRates,
+        casemSettings,
       })
       const blob = doc.output('blob')
       // Wrapping in a named File (not a plain Blob) so the browser's own PDF
@@ -448,8 +491,8 @@ function ItemCapture({
           <span className="text-sm text-slate-600 dark:text-slate-400">Category</span>
           <select
             required
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
+            value={form.categoryId}
+            onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
             className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
           >
             <option value="">— select —</option>
@@ -465,60 +508,119 @@ function ItemCapture({
           <span className="text-sm text-slate-600 dark:text-slate-400">Case type</span>
           <select
             required
-            value={caseTypeId}
-            onChange={(e) => setCaseTypeId(e.target.value)}
+            value={form.caseTypeId}
+            onChange={(e) => setForm({ ...form, caseTypeId: e.target.value })}
             className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
           >
             <option value="">— select —</option>
             {caseTypes.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
+                {c.is_gdf ? ' (GDF)' : ''}
               </option>
             ))}
           </select>
         </label>
 
-        <label className="flex flex-col gap-1">
-          <span className="text-sm text-slate-600 dark:text-slate-400">Case size or line-up length (ft)</span>
-          <input
-            required
-            type="number"
-            inputMode="decimal"
-            step="0.1"
-            value={qtyFt}
-            onChange={(e) => setQtyFt(e.target.value)}
-            className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-          />
-        </label>
+        {isGdf ? (
+          <>
+            <label className="flex flex-col gap-1">
+              <span className="text-sm text-slate-600 dark:text-slate-400">Number of doors</span>
+              <input
+                required
+                type="number"
+                inputMode="numeric"
+                step="1"
+                value={form.qtyDoors}
+                onChange={(e) => setForm({ ...form, qtyDoors: e.target.value })}
+                className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-sm text-slate-600 dark:text-slate-400">
+                Number of GDF units (physical cabinets)
+              </span>
+              <input
+                required
+                type="number"
+                inputMode="numeric"
+                step="1"
+                value={form.qtyGdfUnits}
+                onChange={(e) => setForm({ ...form, qtyGdfUnits: e.target.value })}
+                className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              />
+              <span className="text-xs text-slate-400">
+                e.g. a 4dr + 4dr + 3dr + 3dr lineup = 14 doors across 4 units.
+              </span>
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+              <input
+                type="checkbox"
+                checked={form.casem}
+                onChange={(e) => setForm({ ...form, casem: e.target.checked })}
+              />
+              Casem (RH-adaptive door heater control)
+            </label>
+          </>
+        ) : (
+          <>
+            <label className="flex flex-col gap-1">
+              <span className="text-sm text-slate-600 dark:text-slate-400">
+                Case size or line-up length (ft)
+              </span>
+              <input
+                required
+                type="number"
+                inputMode="decimal"
+                step="0.1"
+                value={form.qtyFt}
+                onChange={(e) => setForm({ ...form, qtyFt: e.target.value })}
+                className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              />
+            </label>
 
-        <div className="flex flex-col gap-2">
-          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-            <input type="checkbox" checked={reclad} onChange={(e) => setReclad(e.target.checked)} />
-            Reclad
-          </label>
-          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-            <input
-              type="checkbox"
-              checked={canopyLed}
-              onChange={(e) => setCanopyLed(e.target.checked)}
-            />
-            Canopy LEDs
-          </label>
-          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
-            <input
-              type="checkbox"
-              checked={undershelfLed}
-              onChange={(e) => setUndershelfLed(e.target.checked)}
-            />
-            Undershelf LEDs
-          </label>
-        </div>
+            <div className="flex flex-col gap-2">
+              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={form.doors}
+                  onChange={(e) => setForm({ ...form, doors: e.target.checked })}
+                />
+                Doors
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={form.reclad}
+                  onChange={(e) => setForm({ ...form, reclad: e.target.checked })}
+                />
+                Reclad
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={form.canopyLed}
+                  onChange={(e) => setForm({ ...form, canopyLed: e.target.checked })}
+                />
+                Canopy LEDs
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={form.undershelfLed}
+                  onChange={(e) => setForm({ ...form, undershelfLed: e.target.checked })}
+                />
+                Undershelf LEDs
+              </label>
+            </div>
+          </>
+        )}
 
         <label className="flex flex-col gap-1">
           <span className="text-sm text-slate-600 dark:text-slate-400">Notes</span>
           <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
             rows={2}
             placeholder="Anything worth noting about this case or line-up"
             className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
@@ -555,6 +657,7 @@ function ItemCapture({
         {items.map((item) => {
           const caseType = caseTypes.find((c) => c.id === item.case_type_id)
           const category = categories.find((c) => c.id === item.category_id)
+          const itemIsGdf = caseType?.is_gdf ?? false
           return (
             <div
               key={item.id}
@@ -565,10 +668,20 @@ function ItemCapture({
                   {category?.name} — {caseType?.name}
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">
-                  {item.qty_ft}ft
-                  {item.reclad && ' · Reclad'}
-                  {item.canopy_led && ' · Canopy LED'}
-                  {item.undershelf_led && ' · Undershelf LED'}
+                  {itemIsGdf ? (
+                    <>
+                      {item.qty_doors} doors / {item.qty_gdf_units} units
+                      {item.casem && ' · Casem'}
+                    </>
+                  ) : (
+                    <>
+                      {item.qty_ft}ft
+                      {!item.doors && ' · No Doors'}
+                      {item.reclad && ' · Reclad'}
+                      {item.canopy_led && ' · Canopy LED'}
+                      {item.undershelf_led && ' · Undershelf LED'}
+                    </>
+                  )}
                 </div>
                 {item.notes && (
                   <div className="mt-1 text-xs italic text-slate-500 dark:text-slate-400">
@@ -577,18 +690,18 @@ function ItemCapture({
                 )}
               </div>
               <div className="flex flex-col items-end gap-1">
-              <button
-                onClick={() => startEditItem(item)}
-                className="text-sm text-slate-500 hover:underline"
-              >
-                Edit
-              </button>
-              <button
-                onClick={() => handleDeleteItem(item.id)}
-                className="text-sm text-red-500 hover:underline"
-              >
-                Remove
-              </button>
+                <button
+                  onClick={() => startEditItem(item)}
+                  className="text-sm text-slate-500 hover:underline"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => handleDeleteItem(item.id)}
+                  className="text-sm text-red-500 hover:underline"
+                >
+                  Remove
+                </button>
               </div>
             </div>
           )
