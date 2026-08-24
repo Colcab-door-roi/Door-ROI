@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import type { AppSettings, CaseType, Category, CostRate, PlantType } from '../types'
+import type { AppSettings, CaseType, Category, CostRate, DoorType, PlantType } from '../types'
 
 const PASSCODE = import.meta.env.VITE_ADMIN_PASSCODE as string | undefined
 const SESSION_KEY = 'fridge-admin-unlocked'
@@ -71,6 +71,7 @@ export default function Admin() {
 
       <SettingsSection />
       <CostRatesSection />
+      <DoorTypesSection />
       <CategoriesSection />
       <CaseTypesSection />
       <PlantTypesSection />
@@ -129,23 +130,27 @@ function Field({
 function SettingsSection() {
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [rate, setRate] = useState('')
+  const [priceIncrease, setPriceIncrease] = useState('')
   const [disclaimer, setDisclaimer] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [uploading, setUploading] = useState<'header' | 'footer' | null>(null)
+
+  async function load() {
+    const { data, error } = await supabase.from('app_settings').select('*').single()
+    if (error) setError(error.message)
+    else if (data) {
+      setSettings(data)
+      setRate(data.default_electricity_rate.toString())
+      setPriceIncrease(data.annual_price_increase_percent.toString())
+      setDisclaimer(data.legal_disclaimer ?? '')
+    }
+    setLoading(false)
+  }
 
   useEffect(() => {
-    async function load() {
-      const { data, error } = await supabase.from('app_settings').select('*').single()
-      if (error) setError(error.message)
-      else if (data) {
-        setSettings(data)
-        setRate(data.default_electricity_rate.toString())
-        setDisclaimer(data.legal_disclaimer ?? '')
-      }
-      setLoading(false)
-    }
     load()
   }, [])
 
@@ -158,12 +163,40 @@ function SettingsSection() {
       .from('app_settings')
       .update({
         default_electricity_rate: Number(rate) || 0,
+        annual_price_increase_percent: Number(priceIncrease) || 0,
         legal_disclaimer: disclaimer,
       })
       .eq('id', true)
     if (error) setError(error.message)
     else setSaved(true)
     setSaving(false)
+  }
+
+  async function handleImageUpload(file: File, slot: 'header' | 'footer') {
+    setUploading(slot)
+    setError(null)
+    const column = slot === 'header' ? 'header_image_url' : 'footer_image_url'
+    const path = `${slot}-${Date.now()}.jpg`
+
+    const { error: uploadError } = await supabase.storage
+      .from('report-assets')
+      .upload(path, file, { upsert: true, contentType: file.type })
+
+    if (uploadError) {
+      setError(uploadError.message)
+      setUploading(null)
+      return
+    }
+
+    const { data } = supabase.storage.from('report-assets').getPublicUrl(path)
+    const { error: saveError } = await supabase
+      .from('app_settings')
+      .update({ [column]: data.publicUrl })
+      .eq('id', true)
+
+    if (saveError) setError(saveError.message)
+    else await load()
+    setUploading(null)
   }
 
   if (loading) return <Card title="Settings"><p className="text-sm text-slate-500">Loading…</p></Card>
@@ -177,6 +210,12 @@ function SettingsSection() {
         className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-800"
       >
         <Field label="Default electricity rate (R/kWh)" value={rate} onChange={setRate} type="number" />
+        <Field
+          label="Annual electricity price increase (%)"
+          value={priceIncrease}
+          onChange={setPriceIncrease}
+          type="number"
+        />
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-slate-600 dark:text-slate-400">Legal disclaimer (shown on PDF reports)</span>
           <textarea
@@ -197,6 +236,37 @@ function SettingsSection() {
           {saved && <span className="text-sm text-emerald-600">Saved</span>}
         </div>
       </form>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="flex flex-col gap-2 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">PDF header image (JPG)</span>
+          {settings.header_image_url && (
+            <img src={settings.header_image_url} alt="Header preview" className="h-16 w-full rounded object-contain" />
+          )}
+          <input
+            type="file"
+            accept="image/jpeg"
+            disabled={uploading === 'header'}
+            onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0], 'header')}
+            className="text-sm"
+          />
+          {uploading === 'header' && <span className="text-xs text-slate-500">Uploading…</span>}
+        </div>
+        <div className="flex flex-col gap-2 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">PDF footer image (JPG)</span>
+          {settings.footer_image_url && (
+            <img src={settings.footer_image_url} alt="Footer preview" className="h-16 w-full rounded object-contain" />
+          )}
+          <input
+            type="file"
+            accept="image/jpeg"
+            disabled={uploading === 'footer'}
+            onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0], 'footer')}
+            className="text-sm"
+          />
+          {uploading === 'footer' && <span className="text-xs text-slate-500">Uploading…</span>}
+        </div>
+      </div>
     </Card>
   )
 }
@@ -380,7 +450,6 @@ function CategoriesSection() {
 const emptyCaseForm = {
   name: '',
   w_per_ft_without_doors: '',
-  savings_percent: '',
   notes: '',
 }
 
@@ -412,7 +481,6 @@ function CaseTypesSection() {
     setForm({
       name: item.name,
       w_per_ft_without_doors: item.w_per_ft_without_doors.toString(),
-      savings_percent: item.savings_percent.toString(),
       notes: item.notes ?? '',
     })
   }
@@ -430,7 +498,6 @@ function CaseTypesSection() {
     const payload = {
       name: form.name,
       w_per_ft_without_doors: Number(form.w_per_ft_without_doors) || 0,
-      savings_percent: Number(form.savings_percent) || 0,
       notes: form.notes || null,
     }
 
@@ -472,13 +539,6 @@ function CaseTypesSection() {
             type="number"
             required
           />
-          <Field
-            label="% Savings with doors"
-            value={form.savings_percent}
-            onChange={(v) => setForm({ ...form, savings_percent: v })}
-            type="number"
-            required
-          />
           <Field label="Notes" value={form.notes} onChange={(v) => setForm({ ...form, notes: v })} />
         </div>
         <div className="flex gap-2">
@@ -513,8 +573,175 @@ function CaseTypesSection() {
           >
             <div>
               <div className="font-medium text-slate-900 dark:text-slate-100">{item.name}</div>
+              <div className="text-xs text-slate-500">{item.w_per_ft_without_doors} W/ft</div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => startEdit(item)} className="text-sm text-slate-500 hover:underline">
+                Edit
+              </button>
+              <button onClick={() => handleDelete(item.id)} className="text-sm text-red-500 hover:underline">
+                Delete
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
+// --- Door types ---
+
+const emptyDoorForm = { name: '', cost_4ft: '', cost_5ft: '', cost_7ft: '', energy_saving_percent: '' }
+
+function DoorTypesSection() {
+  const [items, setItems] = useState<DoorType[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [form, setForm] = useState(emptyDoorForm)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  async function load() {
+    setLoading(true)
+    const { data, error } = await supabase.from('door_types').select('*').order('name')
+    if (error) setError(error.message)
+    else setItems(data ?? [])
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  function startEdit(item: DoorType) {
+    setEditingId(item.id)
+    setForm({
+      name: item.name,
+      cost_4ft: item.cost_4ft.toString(),
+      cost_5ft: item.cost_5ft.toString(),
+      cost_7ft: item.cost_7ft.toString(),
+      energy_saving_percent: item.energy_saving_percent.toString(),
+    })
+  }
+
+  function resetForm() {
+    setEditingId(null)
+    setForm(emptyDoorForm)
+  }
+
+  async function handleSave(e: FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    setError(null)
+
+    const payload = {
+      name: form.name,
+      cost_4ft: Number(form.cost_4ft) || 0,
+      cost_5ft: Number(form.cost_5ft) || 0,
+      cost_7ft: Number(form.cost_7ft) || 0,
+      energy_saving_percent: Number(form.energy_saving_percent) || 0,
+    }
+
+    const { error } = editingId
+      ? await supabase.from('door_types').update(payload).eq('id', editingId)
+      : await supabase.from('door_types').insert(payload)
+
+    if (error) setError(error.message)
+    else {
+      resetForm()
+      await load()
+    }
+    setSaving(false)
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm('Delete this door type?')) return
+    const { error } = await supabase.from('door_types').delete().eq('id', id)
+    if (error) setError(error.message)
+    else await load()
+  }
+
+  return (
+    <Card title="Door types">
+      <p className="text-sm text-slate-500 dark:text-slate-400">
+        Chosen once per store survey and applied to every case in it. Cost follows the same
+        4ft/5ft/7ft rule as other cost rates.
+      </p>
+      <ErrorBox error={error} />
+      <form
+        onSubmit={handleSave}
+        className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-800"
+      >
+        <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300">
+          {editingId ? 'Edit door type' : 'Add new door type'}
+        </h3>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} required />
+          <Field
+            label="Energy saving (%)"
+            value={form.energy_saving_percent}
+            onChange={(v) => setForm({ ...form, energy_saving_percent: v })}
+            type="number"
+            required
+          />
+          <Field
+            label="4ft cost (R)"
+            value={form.cost_4ft}
+            onChange={(v) => setForm({ ...form, cost_4ft: v })}
+            type="number"
+            required
+          />
+          <Field
+            label="5ft cost (R)"
+            value={form.cost_5ft}
+            onChange={(v) => setForm({ ...form, cost_5ft: v })}
+            type="number"
+            required
+          />
+          <Field
+            label="7ft cost (R)"
+            value={form.cost_7ft}
+            onChange={(v) => setForm({ ...form, cost_7ft: v })}
+            type="number"
+            required
+          />
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={saving}
+            className="rounded-lg bg-slate-900 px-4 py-2 font-medium text-white disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
+          >
+            {editingId ? 'Save changes' : 'Add door type'}
+          </button>
+          {editingId && (
+            <button
+              type="button"
+              onClick={resetForm}
+              className="rounded-lg border border-slate-300 px-4 py-2 dark:border-slate-700"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      </form>
+
+      <div className="flex flex-col gap-2">
+        {loading && <p className="text-sm text-slate-500">Loading…</p>}
+        {!loading && items.length === 0 && (
+          <p className="text-sm text-slate-500">No door types yet.</p>
+        )}
+        {items.map((item) => (
+          <div
+            key={item.id}
+            className="flex items-center justify-between rounded-lg border border-slate-200 p-3 dark:border-slate-800"
+          >
+            <div>
+              <div className="font-medium text-slate-900 dark:text-slate-100">{item.name}</div>
               <div className="text-xs text-slate-500">
-                {item.w_per_ft_without_doors} W/ft, {item.savings_percent}% savings
+                {item.energy_saving_percent}% saving · R{item.cost_4ft}/4ft, R{item.cost_5ft}/5ft, R
+                {item.cost_7ft}/7ft
               </div>
             </div>
             <div className="flex gap-2">

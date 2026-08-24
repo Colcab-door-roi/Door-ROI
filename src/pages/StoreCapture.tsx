@@ -7,6 +7,7 @@ import type {
   CaseType,
   Category,
   CostRate,
+  DoorType,
   PlantType,
   StoreItem,
   StoreVisit,
@@ -23,6 +24,7 @@ export default function StoreCapture() {
   const [categories, setCategories] = useState<Category[]>([])
   const [caseTypes, setCaseTypes] = useState<CaseType[]>([])
   const [plantTypes, setPlantTypes] = useState<PlantType[]>([])
+  const [doorTypes, setDoorTypes] = useState<DoorType[]>([])
   const [costRates, setCostRates] = useState<CostRate[]>([])
   const [settings, setSettings] = useState<AppSettings | null>(null)
 
@@ -31,21 +33,23 @@ export default function StoreCapture() {
 
   useEffect(() => {
     async function load() {
-      const [catRes, caseRes, plantRes, costRes, settingsRes] = await Promise.all([
+      const [catRes, caseRes, plantRes, doorRes, costRes, settingsRes] = await Promise.all([
         supabase.from('categories').select('*').order('name'),
         supabase.from('case_types').select('*').order('name'),
         supabase.from('plant_types').select('*').order('name'),
+        supabase.from('door_types').select('*').order('name'),
         supabase.from('cost_rates').select('*'),
         supabase.from('app_settings').select('*').single(),
       ])
       const firstError =
-        catRes.error || caseRes.error || plantRes.error || costRes.error || settingsRes.error
+        catRes.error || caseRes.error || plantRes.error || doorRes.error || costRes.error || settingsRes.error
       if (firstError) {
         setError(firstError.message)
       } else {
         setCategories(catRes.data ?? [])
         setCaseTypes(caseRes.data ?? [])
         setPlantTypes(plantRes.data ?? [])
+        setDoorTypes(doorRes.data ?? [])
         setCostRates(costRes.data ?? [])
         setSettings(settingsRes.data)
       }
@@ -70,6 +74,7 @@ export default function StoreCapture() {
     return (
       <StoreProfileForm
         plantTypes={plantTypes}
+        doorTypes={doorTypes}
         defaultRate={settings?.default_electricity_rate ?? 0}
         onCreated={setStore}
       />
@@ -84,6 +89,7 @@ export default function StoreCapture() {
       categories={categories}
       caseTypes={caseTypes}
       plantTypes={plantTypes}
+      doorTypes={doorTypes}
       costRates={costRates}
       settings={settings}
       onNewStore={() => {
@@ -96,16 +102,19 @@ export default function StoreCapture() {
 
 function StoreProfileForm({
   plantTypes,
+  doorTypes,
   defaultRate,
   onCreated,
 }: {
   plantTypes: PlantType[]
+  doorTypes: DoorType[]
   defaultRate: number
   onCreated: (store: StoreVisit) => void
 }) {
   const [storeName, setStoreName] = useState('')
   const [salesRepName, setSalesRepName] = useState('')
   const [plantTypeId, setPlantTypeId] = useState(plantTypes[0]?.id ?? '')
+  const [doorTypeId, setDoorTypeId] = useState(doorTypes[0]?.id ?? '')
   const [rate, setRate] = useState(defaultRate.toString())
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -121,6 +130,7 @@ function StoreProfileForm({
         sales_rep_name: salesRepName,
         visit_date: todayISO(),
         plant_type_id: plantTypeId,
+        door_type_id: doorTypeId,
         electricity_rate: Number(rate) || 0,
       })
       .select()
@@ -131,11 +141,13 @@ function StoreProfileForm({
     setSaving(false)
   }
 
+  const canSubmit = plantTypes.length > 0 && doorTypes.length > 0
+
   return (
     <div className="mx-auto flex min-h-svh max-w-md flex-col gap-6 p-4 pb-16">
       <header className="flex items-center justify-between pt-4">
         <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-          New store visit
+          Store survey
         </h1>
         <Link to="/admin" className="text-sm text-slate-400 hover:underline">
           Admin
@@ -151,6 +163,11 @@ function StoreProfileForm({
       {plantTypes.length === 0 && (
         <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
           No plant types set up yet — add one from Admin first.
+        </p>
+      )}
+      {doorTypes.length === 0 && (
+        <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          No door types set up yet — add one from Admin first.
         </p>
       )}
 
@@ -206,6 +223,23 @@ function StoreProfileForm({
         </label>
 
         <label className="flex flex-col gap-1">
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Door type</span>
+          <select
+            required
+            value={doorTypeId}
+            onChange={(e) => setDoorTypeId(e.target.value)}
+            className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          >
+            {doorTypes.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name} ({d.energy_saving_percent}% saving)
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-slate-400">Applies to every case in this survey.</span>
+        </label>
+
+        <label className="flex flex-col gap-1">
           <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
             Electricity rate (R/kWh)
           </span>
@@ -221,7 +255,7 @@ function StoreProfileForm({
 
         <button
           type="submit"
-          disabled={saving || plantTypes.length === 0}
+          disabled={saving || !canSubmit}
           className="rounded-lg bg-slate-900 p-3 font-medium text-white disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
         >
           Start capturing cases
@@ -238,6 +272,7 @@ function ItemCapture({
   categories,
   caseTypes,
   plantTypes,
+  doorTypes,
   costRates,
   settings,
   onNewStore,
@@ -248,6 +283,7 @@ function ItemCapture({
   categories: Category[]
   caseTypes: CaseType[]
   plantTypes: PlantType[]
+  doorTypes: DoorType[]
   costRates: CostRate[]
   settings: AppSettings | null
   onNewStore: () => void
@@ -258,11 +294,13 @@ function ItemCapture({
   const [reclad, setReclad] = useState(false)
   const [canopyLed, setCanopyLed] = useState(false)
   const [undershelfLed, setUndershelfLed] = useState(false)
+  const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
 
   const plantType = plantTypes.find((p) => p.id === store.plant_type_id)
+  const doorType = doorTypes.find((d) => d.id === store.door_type_id)
 
   async function handleAddItem(e: FormEvent) {
     e.preventDefault()
@@ -280,6 +318,7 @@ function ItemCapture({
         reclad,
         canopy_led: canopyLed,
         undershelf_led: undershelfLed,
+        notes: notes || null,
       })
       .select()
       .single()
@@ -293,6 +332,7 @@ function ItemCapture({
       setReclad(false)
       setCanopyLed(false)
       setUndershelfLed(false)
+      setNotes('')
     }
     setSaving(false)
   }
@@ -303,16 +343,17 @@ function ItemCapture({
     else setItems((prev) => prev.filter((i) => i.id !== id))
   }
 
-  function handleFinish() {
-    if (!plantType || !settings) return
+  async function handleFinish() {
+    if (!plantType || !doorType || !settings) return
     setGenerating(true)
     try {
-      const doc = generateStoreReport({
+      const doc = await generateStoreReport({
         store,
         items,
         caseTypes,
         categories,
         plantType,
+        doorType,
         settings,
         costRates,
       })
@@ -342,11 +383,11 @@ function ItemCapture({
             {store.store_name}
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            {store.sales_rep_name} · {store.visit_date} · {plantType?.name}
+            {store.sales_rep_name} · {store.visit_date} · {plantType?.name} · {doorType?.name}
           </p>
         </div>
         <button onClick={onNewStore} className="text-sm text-slate-400 hover:underline">
-          New store
+          New survey
         </button>
       </header>
 
@@ -432,6 +473,17 @@ function ItemCapture({
           </label>
         </div>
 
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-slate-600 dark:text-slate-400">Notes</span>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={2}
+            placeholder="Anything worth noting about this case or line-up"
+            className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          />
+        </label>
+
         <button
           type="submit"
           disabled={saving}
@@ -466,6 +518,11 @@ function ItemCapture({
                   {item.canopy_led && ' · Canopy LED'}
                   {item.undershelf_led && ' · Undershelf LED'}
                 </div>
+                {item.notes && (
+                  <div className="mt-1 text-xs italic text-slate-500 dark:text-slate-400">
+                    {item.notes}
+                  </div>
+                )}
               </div>
               <button
                 onClick={() => handleDeleteItem(item.id)}

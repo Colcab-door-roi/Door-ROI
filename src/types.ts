@@ -7,7 +7,6 @@ export interface CaseType {
   id: string
   name: string
   w_per_ft_without_doors: number
-  savings_percent: number
   notes: string | null
 }
 
@@ -17,12 +16,24 @@ export interface PlantType {
   cop: number
 }
 
-export interface AppSettings {
-  default_electricity_rate: number
-  legal_disclaimer: string
+export interface DoorType {
+  id: string
+  name: string
+  cost_4ft: number
+  cost_5ft: number
+  cost_7ft: number
+  energy_saving_percent: number
 }
 
-export type CostType = 'door' | 'reclad' | 'canopy_led' | 'undershelf_led'
+export interface AppSettings {
+  default_electricity_rate: number
+  annual_price_increase_percent: number
+  legal_disclaimer: string
+  header_image_url: string | null
+  footer_image_url: string | null
+}
+
+export type CostType = 'reclad' | 'canopy_led' | 'undershelf_led'
 
 export interface CostRate {
   cost_type: CostType
@@ -38,6 +49,7 @@ export interface StoreVisit {
   sales_rep_name: string
   visit_date: string
   plant_type_id: string
+  door_type_id: string
   electricity_rate: number
 }
 
@@ -50,6 +62,7 @@ export interface StoreItem {
   reclad: boolean
   canopy_led: boolean
   undershelf_led: boolean
+  notes: string | null
 }
 
 export interface CalculationResult {

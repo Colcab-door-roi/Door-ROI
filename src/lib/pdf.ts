@@ -1,7 +1,16 @@
 import { jsPDF } from 'jspdf'
-import { calculateSavings } from './calculate'
+import { calculatePaybackYears, calculateSavings } from './calculate'
 import { resolveCost } from './costs'
-import type { AppSettings, CaseType, Category, CostRate, PlantType, StoreItem, StoreVisit } from '../types'
+import type {
+  AppSettings,
+  CaseType,
+  Category,
+  CostRate,
+  DoorType,
+  PlantType,
+  StoreItem,
+  StoreVisit,
+} from '../types'
 
 interface ReportContext {
   store: StoreVisit
@@ -9,12 +18,16 @@ interface ReportContext {
   caseTypes: CaseType[]
   categories: Category[]
   plantType: PlantType
+  doorType: DoorType
   settings: AppSettings
   costRates: CostRate[]
 }
 
 const MARGIN = 14
 const LINE_HEIGHT = 4.2
+const HEADER_MAX_HEIGHT = 22
+const FOOTER_MAX_HEIGHT = 15
+const FOOTER_PADDING = 6
 
 // x-position, width (mm) for each column — cumulative widths sum to 168mm,
 // comfortably inside A4's 182mm usable width (210mm page - 14mm margins
@@ -37,19 +50,75 @@ export function reportFilename(store: StoreVisit) {
   return `${sanitizeFilename(store.store_name)} ${store.visit_date}.pdf`
 }
 
-export function generateStoreReport(ctx: ReportContext) {
-  const { store, items, caseTypes, categories, plantType, settings, costRates } = ctx
-  const doorRate = costRates.find((r) => r.cost_type === 'door')
+interface LoadedImage {
+  dataUrl: string
+  width: number
+  height: number
+}
+
+function loadImage(url: string): Promise<LoadedImage | null> {
+  return fetch(url)
+    .then((res) => res.blob())
+    .then(
+      (blob) =>
+        new Promise<LoadedImage>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => {
+            const dataUrl = reader.result as string
+            const img = new Image()
+            img.onload = () => resolve({ dataUrl, width: img.naturalWidth, height: img.naturalHeight })
+            img.onerror = reject
+            img.src = dataUrl
+          }
+          reader.onerror = reject
+          reader.readAsDataURL(blob)
+        }),
+    )
+    .catch(() => null)
+}
+
+function fitDimensions(img: LoadedImage, maxWidth: number, maxHeight: number) {
+  const aspect = img.width / img.height
+  let w = maxWidth
+  let h = w / aspect
+  if (h > maxHeight) {
+    h = maxHeight
+    w = h * aspect
+  }
+  return { w, h }
+}
+
+export async function generateStoreReport(ctx: ReportContext) {
+  const { store, items, caseTypes, categories, plantType, doorType, settings, costRates } = ctx
   const recladRate = costRates.find((r) => r.cost_type === 'reclad')
   const canopyRate = costRates.find((r) => r.cost_type === 'canopy_led')
   const undershelfRate = costRates.find((r) => r.cost_type === 'undershelf_led')
+
+  const [headerImg, footerImg] = await Promise.all([
+    settings.header_image_url ? loadImage(settings.header_image_url) : Promise.resolve(null),
+    settings.footer_image_url ? loadImage(settings.footer_image_url) : Promise.resolve(null),
+  ])
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   doc.setProperties({ title: reportFilename(store).replace(/\.pdf$/, '') })
 
   const pageWidth = doc.internal.pageSize.getWidth()
   const pageHeight = doc.internal.pageSize.getHeight()
-  let y = 20
+  const contentWidth = pageWidth - MARGIN * 2
+
+  const headerDims = headerImg ? fitDimensions(headerImg, contentWidth, HEADER_MAX_HEIGHT) : null
+  const footerDims = footerImg ? fitDimensions(footerImg, contentWidth, FOOTER_MAX_HEIGHT) : null
+  const contentStartY = headerDims ? 8 + headerDims.h + 6 : 20
+  const footerReserve = footerDims ? footerDims.h + FOOTER_PADDING * 2 : 12
+
+  function drawHeaderImage() {
+    if (headerImg && headerDims) {
+      doc.addImage(headerImg.dataUrl, 'JPEG', MARGIN + (contentWidth - headerDims.w) / 2, 8, headerDims.w, headerDims.h)
+    }
+  }
+
+  let y = contentStartY
+  drawHeaderImage()
 
   doc.setFontSize(18)
   doc.text('Door ROI — Store energy savings report', MARGIN, y)
@@ -63,6 +132,8 @@ export function generateStoreReport(ctx: ReportContext) {
   doc.text(`Date: ${store.visit_date}`, MARGIN, y)
   y += 6
   doc.text(`Refrigeration plant: ${plantType.name} (COP ${plantType.cop})`, MARGIN, y)
+  y += 6
+  doc.text(`Door type: ${doorType.name} (${doorType.energy_saving_percent}% saving)`, MARGIN, y)
   y += 6
   doc.text(`Electricity rate: R ${store.electricity_rate.toFixed(2)} / kWh`, MARGIN, y)
   y += 10
@@ -93,9 +164,9 @@ export function generateStoreReport(ctx: ReportContext) {
     const category = categories.find((c) => c.id === item.category_id)
     if (!caseType) continue
 
-    const result = calculateSavings(caseType, plantType, item.qty_ft, store.electricity_rate)
+    const result = calculateSavings(caseType, doorType, plantType, item.qty_ft, store.electricity_rate)
     const upgradeCost =
-      (doorRate ? resolveCost(doorRate, item.qty_ft) : 0) +
+      resolveCost(doorType, item.qty_ft) +
       (item.reclad && recladRate ? resolveCost(recladRate, item.qty_ft) : 0) +
       (item.canopy_led && canopyRate ? resolveCost(canopyRate, item.qty_ft) : 0) +
       (item.undershelf_led && undershelfRate ? resolveCost(undershelfRate, item.qty_ft) : 0)
@@ -123,12 +194,14 @@ export function generateStoreReport(ctx: ReportContext) {
     ]
 
     const wrappedCells = cellValues.map((value, i) => doc.splitTextToSize(value, COLUMNS[i].width))
+    const noteLines = item.notes ? doc.splitTextToSize(`Note: ${item.notes}`, contentWidth) : []
     const rowLines = Math.max(...wrappedCells.map((w) => w.length))
-    const rowHeight = rowLines * LINE_HEIGHT + 3
+    const rowHeight = rowLines * LINE_HEIGHT + noteLines.length * LINE_HEIGHT + 3
 
-    if (y + rowHeight > pageHeight - 20) {
+    if (y + rowHeight > pageHeight - footerReserve) {
       doc.addPage()
-      y = 20
+      y = contentStartY
+      drawHeaderImage()
       drawTableHeader()
     }
 
@@ -139,7 +212,23 @@ export function generateStoreReport(ctx: ReportContext) {
         align: col.align,
       })
     })
-    y += rowHeight
+    y += rowLines * LINE_HEIGHT
+
+    if (noteLines.length > 0) {
+      doc.setFont('helvetica', 'italic')
+      doc.setTextColor(120)
+      doc.text(noteLines, MARGIN, y)
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(0)
+      y += noteLines.length * LINE_HEIGHT
+    }
+    y += 3
+  }
+
+  if (y + 40 > pageHeight - footerReserve) {
+    doc.addPage()
+    y = contentStartY
+    drawHeaderImage()
   }
 
   y += 2
@@ -154,9 +243,18 @@ export function generateStoreReport(ctx: ReportContext) {
   y += 6
   doc.text(`Total upgrade investment: R ${totalUpgradeCost.toFixed(0)}`, MARGIN, y)
   y += 6
-  if (totalAnnualCost > 0) {
-    const paybackYears = totalUpgradeCost / totalAnnualCost
-    doc.text(`Estimated payback period: ${paybackYears.toFixed(1)} years`, MARGIN, y)
+
+  const paybackYears = calculatePaybackYears(
+    totalUpgradeCost,
+    totalAnnualCost,
+    settings.annual_price_increase_percent,
+  )
+  if (paybackYears !== null) {
+    const escalationNote =
+      settings.annual_price_increase_percent > 0
+        ? ` (assuming ${settings.annual_price_increase_percent}%/yr electricity price increase)`
+        : ''
+    doc.text(`Estimated payback period: ${paybackYears.toFixed(1)} years${escalationNote}`, MARGIN, y)
     y += 6
   }
   doc.setFont('helvetica', 'normal')
@@ -165,8 +263,24 @@ export function generateStoreReport(ctx: ReportContext) {
     y += 8
     doc.setFontSize(8)
     doc.setTextColor(120)
-    const lines = doc.splitTextToSize(settings.legal_disclaimer, pageWidth - MARGIN * 2)
+    const lines = doc.splitTextToSize(settings.legal_disclaimer, contentWidth)
     doc.text(lines, MARGIN, y)
+    doc.setTextColor(0)
+  }
+
+  if (footerImg && footerDims) {
+    const pageCount = doc.getNumberOfPages()
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i)
+      doc.addImage(
+        footerImg.dataUrl,
+        'JPEG',
+        MARGIN + (contentWidth - footerDims.w) / 2,
+        pageHeight - footerDims.h - FOOTER_PADDING,
+        footerDims.w,
+        footerDims.h,
+      )
+    }
   }
 
   return doc
