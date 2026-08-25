@@ -196,7 +196,8 @@ export async function generateStoreReport(ctx: ReportContext) {
         (item.doors ? resolveCost(doorType, qtyFt) : 0) +
         (item.reclad && recladRate ? resolveCost(recladRate, qtyFt) : 0) +
         (item.canopy_led && canopyRate ? resolveCost(canopyRate, qtyFt) : 0) +
-        (item.undershelf_led && undershelfRate ? resolveCost(undershelfRate, qtyFt) : 0)
+        (item.undershelf_led && undershelfRate ? resolveCost(undershelfRate, qtyFt) : 0) +
+        (item.vertical_led ? (qtyFt / 4) * settings.vertical_led_cost_4ft : 0)
       qtyDisplay = `${qtyFt} ft`
       totalFt += qtyFt
       caseTypeName = caseType.name
@@ -206,6 +207,7 @@ export async function generateStoreReport(ctx: ReportContext) {
           item.reclad ? 'Reclad' : '',
           item.canopy_led ? 'Canopy LED' : '',
           item.undershelf_led ? 'Undershelf LED' : '',
+          item.vertical_led ? 'Vertical LED' : '',
         ]
           .filter(Boolean)
           .join(', ') || '—'

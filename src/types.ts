@@ -41,6 +41,7 @@ export interface AppSettings {
   footer_image_url: string | null
   subassembly_transport_labour_cost_4ft: number
   outlying_labour_cost_4ft: number
+  vertical_led_cost_4ft: number
   vat_percent: number
 }
 
@@ -78,6 +79,7 @@ export interface StoreItem {
   reclad: boolean
   canopy_led: boolean
   undershelf_led: boolean
+  vertical_led: boolean
   casem: boolean
   notes: string | null
 }

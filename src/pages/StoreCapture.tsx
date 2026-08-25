@@ -294,6 +294,7 @@ const emptyItemForm = {
   reclad: false,
   canopyLed: false,
   undershelfLed: false,
+  verticalLed: false,
   casem: false,
   notes: '',
 }
@@ -350,6 +351,7 @@ function ItemCapture({
       reclad: item.reclad,
       canopyLed: item.canopy_led,
       undershelfLed: item.undershelf_led,
+      verticalLed: item.vertical_led,
       casem: item.casem,
       notes: item.notes ?? '',
     })
@@ -374,6 +376,7 @@ function ItemCapture({
           reclad: false,
           canopy_led: false,
           undershelf_led: false,
+          vertical_led: false,
           casem: form.casem,
           notes: form.notes || null,
         }
@@ -388,6 +391,7 @@ function ItemCapture({
           reclad: form.reclad,
           canopy_led: form.canopyLed,
           undershelf_led: form.undershelfLed,
+          vertical_led: form.verticalLed,
           casem: false,
           notes: form.notes || null,
         }
@@ -640,6 +644,14 @@ function ItemCapture({
                 />
                 Undershelf LEDs
               </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={form.verticalLed}
+                  onChange={(e) => setForm({ ...form, verticalLed: e.target.checked })}
+                />
+                Vertical LEDs
+              </label>
             </div>
           </>
         )}
@@ -707,6 +719,7 @@ function ItemCapture({
                       {item.reclad && ' · Reclad'}
                       {item.canopy_led && ' · Canopy LED'}
                       {item.undershelf_led && ' · Undershelf LED'}
+                      {item.vertical_led && ' · Vertical LED'}
                     </>
                   )}
                 </div>

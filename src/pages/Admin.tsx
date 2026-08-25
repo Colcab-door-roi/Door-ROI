@@ -134,6 +134,7 @@ function SettingsSection() {
   const [priceIncrease, setPriceIncrease] = useState('')
   const [subassemblyCost, setSubassemblyCost] = useState('')
   const [outlyingCost, setOutlyingCost] = useState('')
+  const [verticalLedCost, setVerticalLedCost] = useState('')
   const [vatPercent, setVatPercent] = useState('')
   const [disclaimer, setDisclaimer] = useState('')
   const [loading, setLoading] = useState(true)
@@ -151,6 +152,7 @@ function SettingsSection() {
       setPriceIncrease(data.annual_price_increase_percent.toString())
       setSubassemblyCost(data.subassembly_transport_labour_cost_4ft.toString())
       setOutlyingCost(data.outlying_labour_cost_4ft.toString())
+      setVerticalLedCost(data.vertical_led_cost_4ft.toString())
       setVatPercent(data.vat_percent.toString())
       setDisclaimer(data.legal_disclaimer ?? '')
     }
@@ -173,6 +175,7 @@ function SettingsSection() {
         annual_price_increase_percent: Number(priceIncrease) || 0,
         subassembly_transport_labour_cost_4ft: Number(subassemblyCost) || 0,
         outlying_labour_cost_4ft: Number(outlyingCost) || 0,
+        vertical_led_cost_4ft: Number(verticalLedCost) || 0,
         vat_percent: Number(vatPercent) || 0,
         legal_disclaimer: disclaimer,
       })
@@ -238,12 +241,21 @@ function SettingsSection() {
           onChange={setOutlyingCost}
           type="number"
         />
-        <Field label="VAT (%)" value={vatPercent} onChange={setVatPercent} type="number" />
         <p className="text-xs text-slate-400">
           Both apply to the survey's total footage across all cases (total ft ÷ 4 × cost) —
           subassembly/transport/labour always applies; outlying labour only when the survey is
           flagged "Outlying".
         </p>
+        <Field
+          label="Vertical LEDs cost (R per 4ft)"
+          value={verticalLedCost}
+          onChange={setVerticalLedCost}
+          type="number"
+        />
+        <p className="text-xs text-slate-400">
+          Per-case option (like reclad/canopy/undershelf LEDs) — that case's length ÷ 4 × cost.
+        </p>
+        <Field label="VAT (%)" value={vatPercent} onChange={setVatPercent} type="number" />
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-slate-600 dark:text-slate-400">Legal disclaimer (shown on PDF reports)</span>
           <textarea
