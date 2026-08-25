@@ -134,7 +134,6 @@ function SettingsSection() {
   const [priceIncrease, setPriceIncrease] = useState('')
   const [subassemblyCost, setSubassemblyCost] = useState('')
   const [outlyingCost, setOutlyingCost] = useState('')
-  const [verticalLedCost, setVerticalLedCost] = useState('')
   const [vatPercent, setVatPercent] = useState('')
   const [disclaimer, setDisclaimer] = useState('')
   const [loading, setLoading] = useState(true)
@@ -152,7 +151,6 @@ function SettingsSection() {
       setPriceIncrease(data.annual_price_increase_percent.toString())
       setSubassemblyCost(data.subassembly_transport_labour_cost_4ft.toString())
       setOutlyingCost(data.outlying_labour_cost_4ft.toString())
-      setVerticalLedCost(data.vertical_led_cost_4ft.toString())
       setVatPercent(data.vat_percent.toString())
       setDisclaimer(data.legal_disclaimer ?? '')
     }
@@ -175,7 +173,6 @@ function SettingsSection() {
         annual_price_increase_percent: Number(priceIncrease) || 0,
         subassembly_transport_labour_cost_4ft: Number(subassemblyCost) || 0,
         outlying_labour_cost_4ft: Number(outlyingCost) || 0,
-        vertical_led_cost_4ft: Number(verticalLedCost) || 0,
         vat_percent: Number(vatPercent) || 0,
         legal_disclaimer: disclaimer,
       })
@@ -246,15 +243,6 @@ function SettingsSection() {
           subassembly/transport/labour always applies; outlying labour only when the survey is
           flagged "Outlying".
         </p>
-        <Field
-          label="Vertical LEDs cost (R per 4ft)"
-          value={verticalLedCost}
-          onChange={setVerticalLedCost}
-          type="number"
-        />
-        <p className="text-xs text-slate-400">
-          Per-case option (like reclad/canopy/undershelf LEDs) — that case's length ÷ 4 × cost.
-        </p>
         <Field label="VAT (%)" value={vatPercent} onChange={setVatPercent} type="number" />
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-slate-600 dark:text-slate-400">Legal disclaimer (shown on PDF reports)</span>
@@ -320,14 +308,21 @@ function CostRatesSection() {
   const [error, setError] = useState<string | null>(null)
   const [savingType, setSavingType] = useState<string | null>(null)
 
+  const [verticalLedCost, setVerticalLedCost] = useState('')
+  const [verticalLedSaving, setVerticalLedSaving] = useState(false)
+  const [verticalLedSaved, setVerticalLedSaved] = useState(false)
+
   async function load() {
     setLoading(true)
-    const { data, error } = await supabase.from('cost_rates').select('*').order('cost_type')
-    if (error) setError(error.message)
-    else if (data) {
-      setRates(data)
+    const [ratesRes, settingsRes] = await Promise.all([
+      supabase.from('cost_rates').select('*').order('cost_type'),
+      supabase.from('app_settings').select('vertical_led_cost_4ft').single(),
+    ])
+    if (ratesRes.error) setError(ratesRes.error.message)
+    else if (ratesRes.data) {
+      setRates(ratesRes.data)
       const d: typeof drafts = {}
-      for (const r of data) {
+      for (const r of ratesRes.data) {
         d[r.cost_type] = {
           cost_4ft: r.cost_4ft.toString(),
           cost_5ft: r.cost_5ft.toString(),
@@ -336,6 +331,7 @@ function CostRatesSection() {
       }
       setDrafts(d)
     }
+    if (settingsRes.data) setVerticalLedCost(settingsRes.data.vertical_led_cost_4ft.toString())
     setLoading(false)
   }
 
@@ -358,6 +354,19 @@ function CostRatesSection() {
     if (error) setError(error.message)
     else await load()
     setSavingType(null)
+  }
+
+  async function handleSaveVerticalLed() {
+    setVerticalLedSaving(true)
+    setError(null)
+    setVerticalLedSaved(false)
+    const { error } = await supabase
+      .from('app_settings')
+      .update({ vertical_led_cost_4ft: Number(verticalLedCost) || 0 })
+      .eq('id', true)
+    if (error) setError(error.message)
+    else setVerticalLedSaved(true)
+    setVerticalLedSaving(false)
   }
 
   return (
@@ -407,6 +416,29 @@ function CostRatesSection() {
             </div>
           )
         })}
+
+        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
+          <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300">Vertical LED</h3>
+          <p className="text-xs text-slate-400">
+            Flat rate, always proportional — no 5ft/7ft fixed pricing (length ÷ 4 × cost).
+          </p>
+          <Field
+            label="4ft cost (R)"
+            value={verticalLedCost}
+            type="number"
+            onChange={setVerticalLedCost}
+          />
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleSaveVerticalLed}
+              disabled={verticalLedSaving}
+              className="self-start rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
+            >
+              Save Vertical LED
+            </button>
+            {verticalLedSaved && <span className="text-sm text-emerald-600">Saved</span>}
+          </div>
+        </div>
       </div>
     </Card>
   )
