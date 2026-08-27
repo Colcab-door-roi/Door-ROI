@@ -15,6 +15,7 @@ import type {
   PlugInFreezerType,
   RemoteFreezerType,
   SalesRep,
+  SpineConnectionMethod,
   StoreItem,
   StoreVisit,
 } from '../types'
@@ -659,6 +660,7 @@ const emptyItemForm = {
   spineRemoteFreezerTypeId: '',
   spineRemoteQty: '',
   spinePlugInFreezerTypeId: '',
+  spineConnectionMethod: '' as '' | SpineConnectionMethod,
   endRemoteFreezerTypeId: '',
   endRemoteQty: '',
   endPlugInFreezerTypeId: '',
@@ -752,6 +754,7 @@ function ItemCapture({
       spineRemoteFreezerTypeId: item.spine_remote_freezer_type_id ?? '',
       spineRemoteQty: item.spine_remote_qty?.toString() ?? '',
       spinePlugInFreezerTypeId: item.spine_plugin_freezer_type_id ?? '',
+      spineConnectionMethod: item.spine_connection_method ?? '',
       endRemoteFreezerTypeId: item.end_remote_freezer_type_id ?? '',
       endRemoteQty: item.end_remote_qty?.toString() ?? '',
       endPlugInFreezerTypeId: item.end_plugin_freezer_type_id ?? '',
@@ -763,7 +766,11 @@ function ItemCapture({
     e.preventDefault()
     if (!form.categoryId) return
     if (form.isPluginFreezer) {
-      const hasSpine = form.spineRemoteFreezerTypeId && form.spineRemoteQty && form.spinePlugInFreezerTypeId
+      const hasSpine =
+        form.spineRemoteFreezerTypeId &&
+        form.spineRemoteQty &&
+        form.spinePlugInFreezerTypeId &&
+        form.spineConnectionMethod
       const hasEnd = form.endRemoteFreezerTypeId && form.endRemoteQty && form.endPlugInFreezerTypeId
       if (!hasSpine && !hasEnd) return
     } else if (form.isGdf) {
@@ -792,6 +799,7 @@ function ItemCapture({
       spine_remote_freezer_type_id: null,
       spine_remote_qty: null,
       spine_plugin_freezer_type_id: null,
+      spine_connection_method: null,
       end_remote_freezer_type_id: null,
       end_remote_qty: null,
       end_plugin_freezer_type_id: null,
@@ -805,6 +813,7 @@ function ItemCapture({
           spine_remote_freezer_type_id: form.spineRemoteFreezerTypeId || null,
           spine_remote_qty: form.spineRemoteFreezerTypeId ? Number(form.spineRemoteQty) || 0 : null,
           spine_plugin_freezer_type_id: form.spinePlugInFreezerTypeId || null,
+          spine_connection_method: form.spineRemoteFreezerTypeId ? form.spineConnectionMethod || null : null,
           end_remote_freezer_type_id: form.endRemoteFreezerTypeId || null,
           end_remote_qty: form.endRemoteFreezerTypeId ? Number(form.endRemoteQty) || 0 : null,
           end_plugin_freezer_type_id: form.endPlugInFreezerTypeId || null,
@@ -1079,6 +1088,26 @@ function ItemCapture({
                         ))}
                     </select>
                   </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm text-slate-600 dark:text-slate-400">
+                      How the spine run is joined
+                    </span>
+                    <select
+                      required
+                      value={form.spineConnectionMethod}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          spineConnectionMethod: e.target.value as '' | SpineConnectionMethod,
+                        })
+                      }
+                      className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    >
+                      <option value="">— select —</option>
+                      <option value="joint_kit">Back-to-back joint kit</option>
+                      <option value="superstructure">Centre superstructure</option>
+                    </select>
+                  </label>
                 </>
               )}
             </div>
@@ -1320,6 +1349,7 @@ function ItemCapture({
                   spineRemoteType ?? null,
                   item.spine_remote_qty ?? 0,
                   spinePlugInType ?? null,
+                  item.spine_connection_method,
                   endRemoteType ?? null,
                   item.end_remote_qty ?? 0,
                   endPlugInType ?? null,

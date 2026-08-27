@@ -226,6 +226,7 @@ export async function generateStoreReport(ctx: ReportContext) {
         spineRemoteType,
         spineQty,
         spinePlugInType,
+        item.spine_connection_method,
         endRemoteType,
         endQty,
         endPlugInType,
@@ -255,7 +256,19 @@ export async function generateStoreReport(ctx: ReportContext) {
         ]
           .filter(Boolean)
           .join(' + ') || '—')
-      costBreakdown = `Units ${formatRand(plugInResult.plugInUnitsCost)} + Transport ${formatRand(plugInResult.transportCost)} + Joint kit ${formatRand(plugInResult.jointKitCost)} + Superstructure ${formatRand(plugInResult.centreSuperstructureCost)}`
+      const connectionCost =
+        item.spine_connection_method === 'superstructure'
+          ? `Superstructure ${formatRand(plugInResult.centreSuperstructureCost)}`
+          : item.spine_connection_method === 'joint_kit'
+            ? `Joint kit ${formatRand(plugInResult.jointKitCost)}`
+            : ''
+      costBreakdown = [
+        `Units ${formatRand(plugInResult.plugInUnitsCost)}`,
+        `Transport ${formatRand(plugInResult.transportCost)}`,
+        connectionCost,
+      ]
+        .filter(Boolean)
+        .join(' + ')
     } else if (item.is_gdf) {
       const qtyDoors = item.qty_doors ?? 0
       const qtyUnits = item.qty_gdf_units ?? 0

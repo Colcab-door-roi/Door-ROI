@@ -7,6 +7,7 @@ import type {
   PlugInFreezerSettings,
   PlugInFreezerType,
   RemoteFreezerType,
+  SpineConnectionMethod,
 } from '../types'
 
 const HOURS_PER_DAY = 24 // continuous-run assumption, matches source spreadsheet
@@ -102,14 +103,16 @@ export interface PlugInFreezerResult extends CalculationResult {
 //
 // "Running length" of the lineup = the spine run's real length plus a flat
 // per-end allowance (an end case's own footprint isn't what determines how
-// much spine run needs filling) — used for transport cost. The centre
-// superstructure only covers the spine run itself, so it's costed off the
-// spine length alone, at whichever of the two standard module rates (2.1m
-// / 2.5m) is closer to the chosen spine plug-in product's own length.
+// much spine run needs filling) — used for transport cost. The spine run
+// is joined either with back-to-back joint kits or a full centre
+// superstructure, never both; whichever applies is costed at whichever of
+// the two standard module rates (2.1m / 2.5m) is closer to the chosen
+// spine plug-in product's own length.
 export function calculatePlugInFreezerSavings(
   spineRemoteType: RemoteFreezerType | null,
   spineRemoteQty: number,
   spinePlugInType: PlugInFreezerType | null,
+  spineConnectionMethod: SpineConnectionMethod | null,
   endRemoteType: RemoteFreezerType | null,
   endRemoteQty: number,
   endPlugInType: PlugInFreezerType | null,
@@ -148,13 +151,23 @@ export function calculatePlugInFreezerSavings(
     requiredSpinePlugInUnits * (spinePlugInType?.cost_per_unit ?? 0) +
     requiredEndPlugInUnits * (endPlugInType?.cost_per_unit ?? 0)
   const transportCost = runningLengthM * settings.transport_cost_per_m
-  const jointKitCost = Math.ceil(requiredSpinePlugInUnits / 2) * settings.back_to_back_joint_kit_cost
-  const superstructureRate = spinePlugInType
+
+  // Whichever of the two standard spine module sizes (2.1m / 2.5m) the
+  // chosen spine plug-in product is closer to determines both rates below.
+  const is2_1m = spinePlugInType
     ? Math.abs(spinePlugInType.length_m - 2.1) <= Math.abs(spinePlugInType.length_m - 2.5)
-      ? settings.centre_superstructure_2_1m_cost_per_m
-      : settings.centre_superstructure_2_5m_cost_per_m
-    : 0
-  const centreSuperstructureCost = spineRemoteLengthM * superstructureRate
+    : true
+
+  const jointKitCost =
+    requiredSpinePlugInUnits > 0 && spineConnectionMethod === 'joint_kit'
+      ? Math.ceil(requiredSpinePlugInUnits / 2) *
+        (is2_1m ? settings.back_to_back_joint_kit_cost_2_1m : settings.back_to_back_joint_kit_cost_2_5m)
+      : 0
+  const centreSuperstructureCost =
+    requiredSpinePlugInUnits > 0 && spineConnectionMethod === 'superstructure'
+      ? spineRemoteLengthM *
+        (is2_1m ? settings.centre_superstructure_2_1m_cost_per_m : settings.centre_superstructure_2_5m_cost_per_m)
+      : 0
 
   const investmentCost = plugInUnitsCost + transportCost + jointKitCost + centreSuperstructureCost
 

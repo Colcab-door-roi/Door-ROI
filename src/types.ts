@@ -45,10 +45,15 @@ export interface PlugInFreezerType {
 export interface PlugInFreezerSettings {
   end_case_length_allowance_m: number
   transport_cost_per_m: number
-  back_to_back_joint_kit_cost: number
+  back_to_back_joint_kit_cost_2_1m: number
+  back_to_back_joint_kit_cost_2_5m: number
   centre_superstructure_2_1m_cost_per_m: number
   centre_superstructure_2_5m_cost_per_m: number
 }
+
+// A spine run is joined either with simple back-to-back joint kits, or
+// with a full centre superstructure — never both.
+export type SpineConnectionMethod = 'joint_kit' | 'superstructure'
 
 export interface DoorType {
   id: string
@@ -137,6 +142,7 @@ export interface StoreItem {
   spine_remote_freezer_type_id: string | null
   spine_remote_qty: number | null
   spine_plugin_freezer_type_id: string | null
+  spine_connection_method: SpineConnectionMethod | null
   end_remote_freezer_type_id: string | null
   end_remote_qty: number | null
   end_plugin_freezer_type_id: string | null

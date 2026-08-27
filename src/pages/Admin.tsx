@@ -1570,7 +1570,8 @@ function PlugInFreezerSettingsSection() {
   const [settings, setSettings] = useState<PlugInFreezerSettings | null>(null)
   const [endAllowance, setEndAllowance] = useState('')
   const [transportCost, setTransportCost] = useState('')
-  const [jointKitCost, setJointKitCost] = useState('')
+  const [jointKitCost21, setJointKitCost21] = useState('')
+  const [jointKitCost25, setJointKitCost25] = useState('')
   const [superstructure21, setSuperstructure21] = useState('')
   const [superstructure25, setSuperstructure25] = useState('')
   const [loading, setLoading] = useState(true)
@@ -1586,7 +1587,8 @@ function PlugInFreezerSettingsSection() {
         setSettings(data)
         setEndAllowance(data.end_case_length_allowance_m.toString())
         setTransportCost(data.transport_cost_per_m.toString())
-        setJointKitCost(data.back_to_back_joint_kit_cost.toString())
+        setJointKitCost21(data.back_to_back_joint_kit_cost_2_1m.toString())
+        setJointKitCost25(data.back_to_back_joint_kit_cost_2_5m.toString())
         setSuperstructure21(data.centre_superstructure_2_1m_cost_per_m.toString())
         setSuperstructure25(data.centre_superstructure_2_5m_cost_per_m.toString())
       }
@@ -1605,7 +1607,8 @@ function PlugInFreezerSettingsSection() {
       .update({
         end_case_length_allowance_m: Number(endAllowance) || 0,
         transport_cost_per_m: Number(transportCost) || 0,
-        back_to_back_joint_kit_cost: Number(jointKitCost) || 0,
+        back_to_back_joint_kit_cost_2_1m: Number(jointKitCost21) || 0,
+        back_to_back_joint_kit_cost_2_5m: Number(jointKitCost25) || 0,
         centre_superstructure_2_1m_cost_per_m: Number(superstructure21) || 0,
         centre_superstructure_2_5m_cost_per_m: Number(superstructure25) || 0,
       })
@@ -1648,9 +1651,16 @@ function PlugInFreezerSettingsSection() {
             required
           />
           <Field
-            label="Back-to-back joint kit cost (R)"
-            value={jointKitCost}
-            onChange={setJointKitCost}
+            label="Back-to-back joint kit cost (2.1m spine, R)"
+            value={jointKitCost21}
+            onChange={setJointKitCost21}
+            type="number"
+            required
+          />
+          <Field
+            label="Back-to-back joint kit cost (2.5m spine, R)"
+            value={jointKitCost25}
+            onChange={setJointKitCost25}
             type="number"
             required
           />
@@ -1671,10 +1681,11 @@ function PlugInFreezerSettingsSection() {
         </div>
         <p className="text-xs text-slate-400">
           Running length of a lineup = spine run length + (end case count × the allowance
-          above). Transport prices off the full running length; the centre superstructure
-          prices off the spine run only, at whichever of the two rates is closer to the chosen
-          spine plug-in product's length. The joint kit is priced per back-to-back pair of
-          plug-in spine units.
+          above). Transport prices off the full running length. A spine run is joined either
+          with joint kits or a full centre superstructure — never both — chosen per item; the
+          joint kit is priced per back-to-back pair of plug-in spine units, the superstructure
+          off the spine run length. Both use whichever of the 2.1m/2.5m rates is closer to the
+          chosen spine plug-in product's length.
         </p>
         <div className="flex items-center gap-3">
           <button
