@@ -1,5 +1,11 @@
 import { jsPDF } from 'jspdf'
-import { calculateGdfCasemSavings, calculatePaybackYears, calculateSavings, ZERO_RESULT } from './calculate'
+import {
+  calculateGdfCasemSavings,
+  calculatePaybackYears,
+  calculatePlugInFreezerSavings,
+  calculateSavings,
+  ZERO_RESULT,
+} from './calculate'
 import { resolveCost } from './costs'
 import { formatKwh, formatNumber, formatRand } from './format'
 import type {
@@ -10,6 +16,8 @@ import type {
   CostRate,
   DoorType,
   PlantType,
+  PlugInFreezerType,
+  RemoteFreezerType,
   SalesRep,
   StoreItem,
   StoreVisit,
@@ -25,6 +33,8 @@ interface ReportContext {
   settings: AppSettings
   costRates: CostRate[]
   casemSettings: CasemSettings
+  remoteFreezerTypes: RemoteFreezerType[]
+  plugInFreezerTypes: PlugInFreezerType[]
   rep: SalesRep | null
 }
 
@@ -88,7 +98,20 @@ function fitToWidth(img: LoadedImage, width: number) {
 }
 
 export async function generateStoreReport(ctx: ReportContext) {
-  const { store, items, caseTypes, categories, plantType, doorType, settings, costRates, casemSettings, rep } = ctx
+  const {
+    store,
+    items,
+    caseTypes,
+    categories,
+    plantType,
+    doorType,
+    settings,
+    costRates,
+    casemSettings,
+    remoteFreezerTypes,
+    plugInFreezerTypes,
+    rep,
+  } = ctx
   const recladRate = costRates.find((r) => r.cost_type === 'reclad')
   const canopyRate = costRates.find((r) => r.cost_type === 'canopy_led')
   const undershelfRate = costRates.find((r) => r.cost_type === 'undershelf_led')
@@ -172,6 +195,7 @@ export async function generateStoreReport(ctx: ReportContext) {
   let totalAnnualCost = 0
   let totalUpgradeCost = 0
   let totalFt = 0
+  let hasPlugInFreezerItems = false
 
   for (const item of items) {
     const category = categories.find((c) => c.id === item.category_id)
@@ -182,7 +206,25 @@ export async function generateStoreReport(ctx: ReportContext) {
     let options = ''
     let caseTypeName = ''
 
-    if (item.is_gdf) {
+    if (item.is_plugin_freezer) {
+      const remoteType = remoteFreezerTypes.find((r) => r.id === item.remote_freezer_type_id)
+      const plugInType = plugInFreezerTypes.find((p) => p.id === item.plugin_freezer_type_id)
+      if (!remoteType || !plugInType) continue
+      hasPlugInFreezerItems = true
+      const remoteQty = item.remote_qty ?? 0
+      const plugInResult = calculatePlugInFreezerSavings(
+        remoteType,
+        remoteQty,
+        plugInType,
+        plantType.freezer_cop,
+        store.electricity_rate,
+      )
+      result = plugInResult
+      upgradeCost = plugInResult.investmentCost
+      qtyDisplay = `${remoteQty}x ${remoteType.length_m}m`
+      caseTypeName = remoteType.name
+      options = `-> ${plugInResult.requiredPlugInUnits}x ${plugInType.name}`
+    } else if (item.is_gdf) {
       const qtyDoors = item.qty_doors ?? 0
       const qtyUnits = item.qty_gdf_units ?? 0
       result = calculateGdfCasemSavings(qtyDoors, casemSettings, item.casem, store.electricity_rate)
@@ -336,6 +378,14 @@ export async function generateStoreReport(ctx: ReportContext) {
     y += 6
   }
   doc.setFont('helvetica', 'normal')
+
+  if (hasPlugInFreezerItems) {
+    y += 6
+    doc.setFontSize(8)
+    doc.setTextColor(120)
+    doc.text('Plug-in freezer cost excludes transport.', MARGIN, y)
+    doc.setTextColor(0)
+  }
 
   if (settings.legal_disclaimer) {
     y += 8

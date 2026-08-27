@@ -1,4 +1,12 @@
-import type { CalculationResult, CaseType, CasemSettings, DoorType, PlantType } from '../types'
+import type {
+  CalculationResult,
+  CaseType,
+  CasemSettings,
+  DoorType,
+  PlantType,
+  PlugInFreezerType,
+  RemoteFreezerType,
+} from '../types'
 
 const HOURS_PER_DAY = 24 // continuous-run assumption, matches source spreadsheet
 
@@ -69,6 +77,50 @@ export function calculateGdfCasemSavings(
     annualSavingsKwh,
     dailyCostSaving: dailySavingsKwh * electricityRate,
     annualCostSaving: annualSavingsKwh * electricityRate,
+  }
+}
+
+export interface PlugInFreezerResult extends CalculationResult {
+  requiredPlugInUnits: number
+  investmentCost: number
+}
+
+// Compares an existing remote (plumbed-in) freezer run against a proposed
+// plug-in replacement. Both are fixed-size catalog products, not per-metre
+// rates, so the remote run's total length determines how many plug-in
+// units are needed to fill the same space — always rounded up to a whole
+// unit. "Spine" remote units merchandise from two sides; the plug-in units
+// are narrow, so two must sit back-to-back to match that depth, doubling
+// the count a same-length "end" swap would need.
+export function calculatePlugInFreezerSavings(
+  remoteType: RemoteFreezerType,
+  remoteQty: number,
+  plugInType: PlugInFreezerType,
+  freezerCop: number,
+  electricityRate: number,
+): PlugInFreezerResult {
+  const remoteRunLengthM = remoteType.length_m * remoteQty
+  const depthMultiplier = remoteType.shape === 'spine' ? 2 : 1
+  const requiredPlugInUnits = Math.ceil(remoteRunLengthM / plugInType.length_m) * depthMultiplier
+
+  // Refrigeration load runs through the plant (divided by the freezer-
+  // specific COP); direct energy is drawn straight, same as a door heater.
+  const remoteWattsTotal =
+    (remoteType.refrigeration_watts_per_m / freezerCop + remoteType.direct_energy_watts_per_m) *
+    remoteRunLengthM
+  const dailyKwhWithout = (remoteWattsTotal * HOURS_PER_DAY) / 1000
+  const dailyKwhWith = requiredPlugInUnits * plugInType.kwh_per_day
+
+  const dailySavingsKwh = dailyKwhWithout - dailyKwhWith
+  const annualSavingsKwh = dailySavingsKwh * 365
+
+  return {
+    dailySavingsKwh,
+    annualSavingsKwh,
+    dailyCostSaving: dailySavingsKwh * electricityRate,
+    annualCostSaving: annualSavingsKwh * electricityRate,
+    requiredPlugInUnits,
+    investmentCost: requiredPlugInUnits * plugInType.cost_per_unit,
   }
 }
 

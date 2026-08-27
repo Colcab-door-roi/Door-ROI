@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { calculatePlugInFreezerSavings } from '../lib/calculate'
 import { generateStoreReport, reportFilename } from '../lib/pdf'
 import type {
   AppSettings,
@@ -10,6 +11,8 @@ import type {
   CostRate,
   DoorType,
   PlantType,
+  PlugInFreezerType,
+  RemoteFreezerType,
   SalesRep,
   StoreItem,
   StoreVisit,
@@ -33,6 +36,8 @@ export default function StoreCapture() {
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [casemSettings, setCasemSettings] = useState<CasemSettings | null>(null)
   const [salesReps, setSalesReps] = useState<SalesRep[]>([])
+  const [remoteFreezerTypes, setRemoteFreezerTypes] = useState<RemoteFreezerType[]>([])
+  const [plugInFreezerTypes, setPlugInFreezerTypes] = useState<PlugInFreezerType[]>([])
 
   const [currentRep, setCurrentRep] = useState<SalesRep | null>(null)
   const [loginDigest, setLoginDigest] = useState<string[]>([])
@@ -44,7 +49,18 @@ export default function StoreCapture() {
 
   useEffect(() => {
     async function load() {
-      const [catRes, caseRes, plantRes, doorRes, costRes, settingsRes, casemRes, repsRes] = await Promise.all([
+      const [
+        catRes,
+        caseRes,
+        plantRes,
+        doorRes,
+        costRes,
+        settingsRes,
+        casemRes,
+        repsRes,
+        remoteFreezerRes,
+        plugInFreezerRes,
+      ] = await Promise.all([
         supabase.from('categories').select('*').order('name'),
         supabase.from('case_types').select('*').order('name'),
         supabase.from('plant_types').select('*').order('name'),
@@ -53,6 +69,8 @@ export default function StoreCapture() {
         supabase.from('app_settings').select('*').single(),
         supabase.from('casem_settings').select('*').single(),
         supabase.from('sales_reps').select('*').order('name'),
+        supabase.from('remote_freezer_types').select('*').order('name'),
+        supabase.from('plugin_freezer_types').select('*').order('name'),
       ])
       const firstError =
         catRes.error ||
@@ -62,7 +80,9 @@ export default function StoreCapture() {
         costRes.error ||
         settingsRes.error ||
         casemRes.error ||
-        repsRes.error
+        repsRes.error ||
+        remoteFreezerRes.error ||
+        plugInFreezerRes.error
       if (firstError) {
         setError(firstError.message)
       } else {
@@ -74,6 +94,8 @@ export default function StoreCapture() {
         setSettings(settingsRes.data)
         setCasemSettings(casemRes.data)
         setSalesReps(repsRes.data ?? [])
+        setRemoteFreezerTypes(remoteFreezerRes.data ?? [])
+        setPlugInFreezerTypes(plugInFreezerRes.data ?? [])
 
         const storedId = localStorage.getItem(REP_STORAGE_KEY)
         const matched = storedId ? (repsRes.data ?? []).find((r) => r.id === storedId) : null
@@ -175,6 +197,8 @@ export default function StoreCapture() {
       costRates={costRates}
       settings={settings}
       casemSettings={casemSettings}
+      remoteFreezerTypes={remoteFreezerTypes}
+      plugInFreezerTypes={plugInFreezerTypes}
       onStoreUpdated={setStore}
       onBackToList={() => {
         setStore(null)
@@ -612,6 +636,7 @@ function StoreProfileForm({
 
 const emptyItemForm = {
   isGdf: false,
+  isPluginFreezer: false,
   categoryId: '',
   caseTypeId: '',
   qtyFt: '',
@@ -624,6 +649,9 @@ const emptyItemForm = {
   verticalLed: false,
   casem: false,
   casemUnits: '',
+  remoteFreezerTypeId: '',
+  remoteQty: '',
+  plugInFreezerTypeId: '',
   notes: '',
 }
 
@@ -639,6 +667,8 @@ function ItemCapture({
   costRates,
   settings,
   casemSettings,
+  remoteFreezerTypes,
+  plugInFreezerTypes,
   onStoreUpdated,
   onBackToList,
 }: {
@@ -653,6 +683,8 @@ function ItemCapture({
   costRates: CostRate[]
   settings: AppSettings | null
   casemSettings: CasemSettings | null
+  remoteFreezerTypes: RemoteFreezerType[]
+  plugInFreezerTypes: PlugInFreezerType[]
   onStoreUpdated: (store: StoreVisit) => void
   onBackToList: () => void
 }) {
@@ -692,6 +724,7 @@ function ItemCapture({
     setEditingItemId(item.id)
     setForm({
       isGdf: item.is_gdf,
+      isPluginFreezer: item.is_plugin_freezer,
       categoryId: item.category_id,
       caseTypeId: item.case_type_id ?? '',
       qtyFt: item.qty_ft?.toString() ?? '',
@@ -704,6 +737,9 @@ function ItemCapture({
       verticalLed: item.vertical_led,
       casem: item.casem,
       casemUnits: item.casem_units?.toString() ?? '',
+      remoteFreezerTypeId: item.remote_freezer_type_id ?? '',
+      remoteQty: item.remote_qty?.toString() ?? '',
+      plugInFreezerTypeId: item.plugin_freezer_type_id ?? '',
       notes: item.notes ?? '',
     })
   }
@@ -711,42 +747,64 @@ function ItemCapture({
   async function handleSubmitItem(e: FormEvent) {
     e.preventDefault()
     if (!form.categoryId) return
-    if (form.isGdf ? !form.qtyDoors || !form.qtyGdfUnits : !form.caseTypeId || !form.qtyFt) return
+    if (form.isPluginFreezer) {
+      if (!form.remoteFreezerTypeId || !form.remoteQty || !form.plugInFreezerTypeId) return
+    } else if (form.isGdf) {
+      if (!form.qtyDoors || !form.qtyGdfUnits) return
+    } else if (!form.caseTypeId || !form.qtyFt) {
+      return
+    }
     setSaving(true)
     setError(null)
 
-    const payload = form.isGdf
+    const base = {
+      category_id: form.categoryId,
+      case_type_id: null,
+      is_gdf: false,
+      is_plugin_freezer: false,
+      qty_ft: null,
+      qty_doors: null,
+      qty_gdf_units: null,
+      doors: false,
+      reclad: false,
+      canopy_led: false,
+      undershelf_led: false,
+      vertical_led: false,
+      casem: false,
+      casem_units: null,
+      remote_freezer_type_id: null,
+      remote_qty: null,
+      plugin_freezer_type_id: null,
+      notes: form.notes || null,
+    }
+
+    const payload = form.isPluginFreezer
       ? {
-          category_id: form.categoryId,
-          case_type_id: null,
-          is_gdf: true,
-          qty_ft: null,
-          qty_doors: Number(form.qtyDoors) || 0,
-          qty_gdf_units: Number(form.qtyGdfUnits) || 0,
-          doors: false,
-          reclad: false,
-          canopy_led: false,
-          undershelf_led: false,
-          vertical_led: false,
-          casem: form.casem,
-          notes: form.notes || null,
+          ...base,
+          is_plugin_freezer: true,
+          remote_freezer_type_id: form.remoteFreezerTypeId,
+          remote_qty: Number(form.remoteQty) || 0,
+          plugin_freezer_type_id: form.plugInFreezerTypeId,
         }
-      : {
-          category_id: form.categoryId,
-          case_type_id: form.caseTypeId,
-          is_gdf: false,
-          qty_ft: Number(form.qtyFt) || 0,
-          qty_doors: null,
-          qty_gdf_units: null,
-          doors: form.doors,
-          reclad: form.reclad,
-          canopy_led: form.canopyLed,
-          undershelf_led: form.undershelfLed,
-          vertical_led: form.verticalLed,
-          casem: false,
-          casem_units: store.casem && form.doors ? Number(form.casemUnits) || 0 : null,
-          notes: form.notes || null,
-        }
+      : form.isGdf
+        ? {
+            ...base,
+            is_gdf: true,
+            qty_doors: Number(form.qtyDoors) || 0,
+            qty_gdf_units: Number(form.qtyGdfUnits) || 0,
+            casem: form.casem,
+          }
+        : {
+            ...base,
+            case_type_id: form.caseTypeId,
+            qty_ft: Number(form.qtyFt) || 0,
+            doors: form.doors,
+            reclad: form.reclad,
+            canopy_led: form.canopyLed,
+            undershelf_led: form.undershelfLed,
+            vertical_led: form.verticalLed,
+            casem_units: store.casem && form.doors ? Number(form.casemUnits) || 0 : null,
+          }
 
     const { data, error } = editingItemId
       ? await supabase.from('store_items').update(payload).eq('id', editingItemId).select().single()
@@ -792,6 +850,8 @@ function ItemCapture({
         settings,
         costRates,
         casemSettings,
+        remoteFreezerTypes,
+        plugInFreezerTypes,
         rep,
       })
       const blob = doc.output('blob')
@@ -858,9 +918,11 @@ function ItemCapture({
         <div className="flex gap-2 rounded-lg border border-slate-300 p-1 dark:border-slate-700">
           <button
             type="button"
-            onClick={() => setForm({ ...emptyItemForm, categoryId: form.categoryId, isGdf: false })}
+            onClick={() =>
+              setForm({ ...emptyItemForm, categoryId: form.categoryId, isGdf: false, isPluginFreezer: false })
+            }
             className={`flex-1 rounded-md p-2 text-sm font-medium ${
-              !form.isGdf
+              !form.isGdf && !form.isPluginFreezer
                 ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
                 : 'text-slate-600 dark:text-slate-400'
             }`}
@@ -869,7 +931,9 @@ function ItemCapture({
           </button>
           <button
             type="button"
-            onClick={() => setForm({ ...emptyItemForm, categoryId: form.categoryId, isGdf: true })}
+            onClick={() =>
+              setForm({ ...emptyItemForm, categoryId: form.categoryId, isGdf: true, isPluginFreezer: false })
+            }
             className={`flex-1 rounded-md p-2 text-sm font-medium ${
               form.isGdf
                 ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
@@ -877,6 +941,19 @@ function ItemCapture({
             }`}
           >
             GDF
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setForm({ ...emptyItemForm, categoryId: form.categoryId, isGdf: false, isPluginFreezer: true })
+            }
+            className={`flex-1 rounded-md p-2 text-sm font-medium ${
+              form.isPluginFreezer
+                ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                : 'text-slate-600 dark:text-slate-400'
+            }`}
+          >
+            Plug-in Freezer
           </button>
         </div>
 
@@ -897,7 +974,7 @@ function ItemCapture({
           </select>
         </label>
 
-        {!form.isGdf && (
+        {!form.isGdf && !form.isPluginFreezer && (
           <label className="flex flex-col gap-1">
             <span className="text-sm text-slate-600 dark:text-slate-400">Case type</span>
             <select
@@ -916,7 +993,61 @@ function ItemCapture({
           </label>
         )}
 
-        {form.isGdf ? (
+        {form.isPluginFreezer ? (
+          <>
+            <label className="flex flex-col gap-1">
+              <span className="text-sm text-slate-600 dark:text-slate-400">
+                Remote freezer currently on site
+              </span>
+              <select
+                required
+                value={form.remoteFreezerTypeId}
+                onChange={(e) => setForm({ ...form, remoteFreezerTypeId: e.target.value })}
+                className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              >
+                <option value="">— select —</option>
+                {remoteFreezerTypes.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name} ({r.shape}, {r.length_m}m)
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-sm text-slate-600 dark:text-slate-400">How many on site</span>
+              <input
+                required
+                type="number"
+                inputMode="numeric"
+                step="1"
+                value={form.remoteQty}
+                onChange={(e) => setForm({ ...form, remoteQty: e.target.value })}
+                className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-sm text-slate-600 dark:text-slate-400">Replace with</span>
+              <select
+                required
+                value={form.plugInFreezerTypeId}
+                onChange={(e) => setForm({ ...form, plugInFreezerTypeId: e.target.value })}
+                className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              >
+                <option value="">— select —</option>
+                {plugInFreezerTypes.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.shape}, {p.length_m}m)
+                  </option>
+                ))}
+              </select>
+              <span className="text-xs text-slate-400">
+                The number of plug-in units needed to fill the same space (doubled for spine
+                units, which need two back-to-back to match the depth) is worked out
+                automatically when the report is generated.
+              </span>
+            </label>
+          </>
+        ) : form.isGdf ? (
           <>
             <label className="flex flex-col gap-1">
               <span className="text-sm text-slate-600 dark:text-slate-400">Number of doors</span>
@@ -1079,6 +1210,18 @@ function ItemCapture({
         {items.map((item) => {
           const caseType = caseTypes.find((c) => c.id === item.case_type_id)
           const category = categories.find((c) => c.id === item.category_id)
+          const remoteType = remoteFreezerTypes.find((r) => r.id === item.remote_freezer_type_id)
+          const plugInType = plugInFreezerTypes.find((p) => p.id === item.plugin_freezer_type_id)
+          const plugInResult =
+            item.is_plugin_freezer && remoteType && plugInType && plantType
+              ? calculatePlugInFreezerSavings(
+                  remoteType,
+                  item.remote_qty ?? 0,
+                  plugInType,
+                  plantType.freezer_cop,
+                  store.electricity_rate,
+                )
+              : null
           return (
             <div
               key={item.id}
@@ -1086,10 +1229,17 @@ function ItemCapture({
             >
               <div>
                 <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                  {category?.name} — {item.is_gdf ? 'GDF' : caseType?.name}
+                  {category?.name} —{' '}
+                  {item.is_plugin_freezer ? remoteType?.name : item.is_gdf ? 'GDF' : caseType?.name}
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">
-                  {item.is_gdf ? (
+                  {item.is_plugin_freezer ? (
+                    <>
+                      {item.remote_qty}× {remoteType?.length_m}m
+                      {plugInResult &&
+                        ` · Replace with ${plugInResult.requiredPlugInUnits}× ${plugInType?.name}`}
+                    </>
+                  ) : item.is_gdf ? (
                     <>
                       {item.qty_doors} doors / {item.qty_gdf_units} units
                       {item.casem && ' · Casem'}

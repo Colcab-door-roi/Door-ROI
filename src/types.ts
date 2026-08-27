@@ -15,6 +15,30 @@ export interface PlantType {
   id: string
   name: string
   cop: number
+  freezer_cop: number
+}
+
+export type FreezerShape = 'end' | 'spine'
+
+// Fixed-size catalog products, not per-metre rates: plug-in units come in
+// standard lengths (e.g. 1.8m end, 2.1m/2.5m spine), matched against
+// standard remote freezer run lengths (e.g. 7ft end, 8ft/12ft spine).
+export interface RemoteFreezerType {
+  id: string
+  name: string
+  shape: FreezerShape
+  length_m: number
+  refrigeration_watts_per_m: number
+  direct_energy_watts_per_m: number
+}
+
+export interface PlugInFreezerType {
+  id: string
+  name: string
+  shape: FreezerShape
+  length_m: number
+  kwh_per_day: number
+  cost_per_unit: number
 }
 
 export interface DoorType {
@@ -100,6 +124,10 @@ export interface StoreItem {
   vertical_led: boolean
   casem: boolean
   casem_units: number | null
+  is_plugin_freezer: boolean
+  remote_freezer_type_id: string | null
+  remote_qty: number | null
+  plugin_freezer_type_id: string | null
   notes: string | null
 }
 

@@ -9,7 +9,10 @@ import type {
   Category,
   CostRate,
   DoorType,
+  FreezerShape,
   PlantType,
+  PlugInFreezerType,
+  RemoteFreezerType,
   SalesRep,
   StoreVisit,
 } from '../types'
@@ -24,6 +27,7 @@ export default function Admin() {
   const [passcodeInput, setPasscodeInput] = useState('')
   const [passcodeError, setPasscodeError] = useState('')
   const [tab, setTab] = useState<'data' | 'reps'>('data')
+  const [dataTab, setDataTab] = useState<'case' | 'gdf' | 'plugin'>('case')
 
   if (!unlocked) {
     return (
@@ -106,13 +110,40 @@ export default function Admin() {
 
       {tab === 'data' ? (
         <>
-          <SettingsSection />
-          <CostRatesSection />
-          <DoorTypesSection />
-          <CasemSection />
-          <CategoriesSection />
-          <CaseTypesSection />
-          <PlantTypesSection />
+          <div className="flex gap-2 border-b border-slate-200 dark:border-slate-800">
+            {(
+              [
+                ['case', 'Case/Line-up'],
+                ['gdf', 'GDF'],
+                ['plugin', 'Plug in Freezer'],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setDataTab(key)}
+                className={`px-4 py-2 text-sm font-medium ${
+                  dataTab === key
+                    ? 'border-b-2 border-slate-900 text-slate-900 dark:border-slate-100 dark:text-slate-100'
+                    : 'text-slate-500'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {dataTab === 'case' && (
+            <>
+              <SettingsSection />
+              <CostRatesSection />
+              <DoorTypesSection />
+              <CategoriesSection />
+              <CaseTypesSection />
+              <PlantTypesSection />
+            </>
+          )}
+          {dataTab === 'gdf' && <CasemSection />}
+          {dataTab === 'plugin' && <PlugInFreezerSection />}
         </>
       ) : (
         <SalesRepsSection />
@@ -1028,7 +1059,7 @@ function CasemSection() {
 
 // --- Plant types ---
 
-const emptyPlantForm = { name: '', cop: '' }
+const emptyPlantForm = { name: '', cop: '', freezer_cop: '' }
 
 function PlantTypesSection() {
   const [items, setItems] = useState<PlantType[]>([])
@@ -1055,7 +1086,7 @@ function PlantTypesSection() {
 
   function startEdit(item: PlantType) {
     setEditingId(item.id)
-    setForm({ name: item.name, cop: item.cop.toString() })
+    setForm({ name: item.name, cop: item.cop.toString(), freezer_cop: item.freezer_cop.toString() })
   }
 
   function resetForm() {
@@ -1068,7 +1099,11 @@ function PlantTypesSection() {
     setSaving(true)
     setError(null)
 
-    const payload = { name: form.name, cop: Number(form.cop) || 0 }
+    const payload = {
+      name: form.name,
+      cop: Number(form.cop) || 0,
+      freezer_cop: Number(form.freezer_cop) || 0,
+    }
 
     const { error } = editingId
       ? await supabase.from('plant_types').update(payload).eq('id', editingId)
@@ -1106,6 +1141,13 @@ function PlantTypesSection() {
         <div className="grid grid-cols-2 gap-3">
           <Field label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} required />
           <Field label="COP" value={form.cop} onChange={(v) => setForm({ ...form, cop: v })} type="number" required />
+          <Field
+            label="COP for freezers"
+            value={form.freezer_cop}
+            onChange={(v) => setForm({ ...form, freezer_cop: v })}
+            type="number"
+            required
+          />
         </div>
         <div className="flex gap-2">
           <button
@@ -1138,7 +1180,7 @@ function PlantTypesSection() {
             className="flex items-center justify-between rounded-lg border border-slate-200 p-3 dark:border-slate-800"
           >
             <div className="font-medium text-slate-900 dark:text-slate-100">
-              {item.name} — COP {item.cop}
+              {item.name} — COP {item.cop} (freezers {item.freezer_cop})
             </div>
             <div className="flex gap-2">
               <button onClick={() => startEdit(item)} className="text-sm text-slate-500 hover:underline">
@@ -1152,6 +1194,383 @@ function PlantTypesSection() {
         ))}
       </div>
     </Card>
+  )
+}
+
+// --- Plug in Freezer (remote freezer replacement) ---
+
+function ShapeField({ value, onChange }: { value: FreezerShape; onChange: (v: FreezerShape) => void }) {
+  return (
+    <label className="flex flex-col gap-1 text-sm">
+      <span className="text-slate-600 dark:text-slate-400">Shape</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value as FreezerShape)}
+        className="rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+      >
+        <option value="end">End (single-depth)</option>
+        <option value="spine">Spine (double-depth, merchandised from both sides)</option>
+      </select>
+    </label>
+  )
+}
+
+const emptyRemoteForm = {
+  name: '',
+  shape: 'end' as FreezerShape,
+  length_m: '',
+  refrigeration_watts_per_m: '',
+  direct_energy_watts_per_m: '',
+}
+
+function RemoteFreezerTypesSection() {
+  const [items, setItems] = useState<RemoteFreezerType[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [form, setForm] = useState(emptyRemoteForm)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  async function load() {
+    setLoading(true)
+    const { data, error } = await supabase.from('remote_freezer_types').select('*').order('name')
+    if (error) setError(error.message)
+    else setItems(data ?? [])
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  function startEdit(item: RemoteFreezerType) {
+    setEditingId(item.id)
+    setForm({
+      name: item.name,
+      shape: item.shape,
+      length_m: item.length_m.toString(),
+      refrigeration_watts_per_m: item.refrigeration_watts_per_m.toString(),
+      direct_energy_watts_per_m: item.direct_energy_watts_per_m.toString(),
+    })
+  }
+
+  function resetForm() {
+    setEditingId(null)
+    setForm(emptyRemoteForm)
+  }
+
+  async function handleSave(e: FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    setError(null)
+
+    const payload = {
+      name: form.name,
+      shape: form.shape,
+      length_m: Number(form.length_m) || 0,
+      refrigeration_watts_per_m: Number(form.refrigeration_watts_per_m) || 0,
+      direct_energy_watts_per_m: Number(form.direct_energy_watts_per_m) || 0,
+    }
+
+    const { error } = editingId
+      ? await supabase.from('remote_freezer_types').update(payload).eq('id', editingId)
+      : await supabase.from('remote_freezer_types').insert(payload)
+
+    if (error) setError(error.message)
+    else {
+      await logActivity(
+        editingId ? `Remote freezer type updated: ${form.name}` : `Remote freezer type added: ${form.name}`,
+      )
+      resetForm()
+      await load()
+    }
+    setSaving(false)
+  }
+
+  async function handleDelete(id: string, deletedName: string) {
+    if (!confirm('Delete this remote freezer type?')) return
+    const { error } = await supabase.from('remote_freezer_types').delete().eq('id', id)
+    if (error) setError(error.message)
+    else {
+      await logActivity(`Remote freezer type deleted: ${deletedName}`)
+      await load()
+    }
+  }
+
+  return (
+    <Card title="Remote freezer types">
+      <p className="text-sm text-slate-500 dark:text-slate-400">
+        The existing plumbed-in freezers a plug-in freezer would replace — fixed standard
+        lengths (e.g. 7ft end ≈1.9m, 8ft spine ≈2.44m, 12ft spine ≈3.66m), not a per-metre rate.
+        Refrigeration load runs through the plant (using the plant type's freezer COP); direct
+        energy is drawn straight, same as a door heater.
+      </p>
+      <ErrorBox error={error} />
+      <form
+        onSubmit={handleSave}
+        className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-800"
+      >
+        <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300">
+          {editingId ? 'Edit remote freezer type' : 'Add new remote freezer type'}
+        </h3>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} required />
+          <ShapeField value={form.shape} onChange={(v) => setForm({ ...form, shape: v })} />
+          <Field
+            label="Length (m)"
+            value={form.length_m}
+            onChange={(v) => setForm({ ...form, length_m: v })}
+            type="number"
+            required
+          />
+          <Field
+            label="Refrigeration (W/m)"
+            value={form.refrigeration_watts_per_m}
+            onChange={(v) => setForm({ ...form, refrigeration_watts_per_m: v })}
+            type="number"
+            required
+          />
+          <Field
+            label="Direct energy (W/m)"
+            value={form.direct_energy_watts_per_m}
+            onChange={(v) => setForm({ ...form, direct_energy_watts_per_m: v })}
+            type="number"
+            required
+          />
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={saving}
+            className="rounded-lg bg-slate-900 px-4 py-2 font-medium text-white disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
+          >
+            {editingId ? 'Save changes' : 'Add remote freezer type'}
+          </button>
+          {editingId && (
+            <button
+              type="button"
+              onClick={resetForm}
+              className="rounded-lg border border-slate-300 px-4 py-2 dark:border-slate-700"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      </form>
+
+      <div className="flex flex-col gap-2">
+        {loading && <p className="text-sm text-slate-500">Loading…</p>}
+        {!loading && items.length === 0 && (
+          <p className="text-sm text-slate-500">No remote freezer types yet.</p>
+        )}
+        {items.map((item) => (
+          <div
+            key={item.id}
+            className="flex items-center justify-between rounded-lg border border-slate-200 p-3 dark:border-slate-800"
+          >
+            <div>
+              <div className="font-medium text-slate-900 dark:text-slate-100">
+                {item.name} ({item.shape}, {item.length_m}m)
+              </div>
+              <div className="text-xs text-slate-500">
+                {item.refrigeration_watts_per_m} W/m refrigeration, {item.direct_energy_watts_per_m} W/m direct
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => startEdit(item)} className="text-sm text-slate-500 hover:underline">
+                Edit
+              </button>
+              <button onClick={() => handleDelete(item.id, item.name)} className="text-sm text-red-500 hover:underline">
+                Delete
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
+const emptyPlugInForm = {
+  name: '',
+  shape: 'end' as FreezerShape,
+  length_m: '',
+  kwh_per_day: '',
+  cost_per_unit: '',
+}
+
+function PlugInFreezerTypesSection() {
+  const [items, setItems] = useState<PlugInFreezerType[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [form, setForm] = useState(emptyPlugInForm)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  async function load() {
+    setLoading(true)
+    const { data, error } = await supabase.from('plugin_freezer_types').select('*').order('name')
+    if (error) setError(error.message)
+    else setItems(data ?? [])
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  function startEdit(item: PlugInFreezerType) {
+    setEditingId(item.id)
+    setForm({
+      name: item.name,
+      shape: item.shape,
+      length_m: item.length_m.toString(),
+      kwh_per_day: item.kwh_per_day.toString(),
+      cost_per_unit: item.cost_per_unit.toString(),
+    })
+  }
+
+  function resetForm() {
+    setEditingId(null)
+    setForm(emptyPlugInForm)
+  }
+
+  async function handleSave(e: FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    setError(null)
+
+    const payload = {
+      name: form.name,
+      shape: form.shape,
+      length_m: Number(form.length_m) || 0,
+      kwh_per_day: Number(form.kwh_per_day) || 0,
+      cost_per_unit: Number(form.cost_per_unit) || 0,
+    }
+
+    const { error } = editingId
+      ? await supabase.from('plugin_freezer_types').update(payload).eq('id', editingId)
+      : await supabase.from('plugin_freezer_types').insert(payload)
+
+    if (error) setError(error.message)
+    else {
+      await logActivity(
+        editingId ? `Plug-in freezer product updated: ${form.name}` : `Plug-in freezer product added: ${form.name}`,
+      )
+      resetForm()
+      await load()
+    }
+    setSaving(false)
+  }
+
+  async function handleDelete(id: string, deletedName: string) {
+    if (!confirm('Delete this plug-in freezer product?')) return
+    const { error } = await supabase.from('plugin_freezer_types').delete().eq('id', id)
+    if (error) setError(error.message)
+    else {
+      await logActivity(`Plug-in freezer product deleted: ${deletedName}`)
+      await load()
+    }
+  }
+
+  return (
+    <Card title="Plug-in freezer products">
+      <p className="text-sm text-slate-500 dark:text-slate-400">
+        Fixed-size, self-contained freezer units — energy is drawn directly (kWh/day), not
+        through the refrigeration plant. Cost per unit excludes transport.
+      </p>
+      <ErrorBox error={error} />
+      <form
+        onSubmit={handleSave}
+        className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-800"
+      >
+        <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300">
+          {editingId ? 'Edit plug-in freezer product' : 'Add new plug-in freezer product'}
+        </h3>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} required />
+          <ShapeField value={form.shape} onChange={(v) => setForm({ ...form, shape: v })} />
+          <Field
+            label="Length (m)"
+            value={form.length_m}
+            onChange={(v) => setForm({ ...form, length_m: v })}
+            type="number"
+            required
+          />
+          <Field
+            label="Energy (kWh/day)"
+            value={form.kwh_per_day}
+            onChange={(v) => setForm({ ...form, kwh_per_day: v })}
+            type="number"
+            required
+          />
+          <Field
+            label="Cost per unit (R, excl. transport)"
+            value={form.cost_per_unit}
+            onChange={(v) => setForm({ ...form, cost_per_unit: v })}
+            type="number"
+            required
+          />
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={saving}
+            className="rounded-lg bg-slate-900 px-4 py-2 font-medium text-white disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
+          >
+            {editingId ? 'Save changes' : 'Add plug-in freezer product'}
+          </button>
+          {editingId && (
+            <button
+              type="button"
+              onClick={resetForm}
+              className="rounded-lg border border-slate-300 px-4 py-2 dark:border-slate-700"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      </form>
+
+      <div className="flex flex-col gap-2">
+        {loading && <p className="text-sm text-slate-500">Loading…</p>}
+        {!loading && items.length === 0 && (
+          <p className="text-sm text-slate-500">No plug-in freezer products yet.</p>
+        )}
+        {items.map((item) => (
+          <div
+            key={item.id}
+            className="flex items-center justify-between rounded-lg border border-slate-200 p-3 dark:border-slate-800"
+          >
+            <div>
+              <div className="font-medium text-slate-900 dark:text-slate-100">
+                {item.name} ({item.shape}, {item.length_m}m)
+              </div>
+              <div className="text-xs text-slate-500">
+                {item.kwh_per_day} kWh/day · R{item.cost_per_unit}/unit (excl. transport)
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => startEdit(item)} className="text-sm text-slate-500 hover:underline">
+                Edit
+              </button>
+              <button onClick={() => handleDelete(item.id, item.name)} className="text-sm text-red-500 hover:underline">
+                Delete
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
+function PlugInFreezerSection() {
+  return (
+    <>
+      <RemoteFreezerTypesSection />
+      <PlugInFreezerTypesSection />
+    </>
   )
 }
 
