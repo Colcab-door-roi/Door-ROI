@@ -921,6 +921,7 @@ function CasemSection() {
   const [costPerUnit, setCostPerUnit] = useState('')
   const [installationCostPerUnit, setInstallationCostPerUnit] = useState('')
   const [savingsPercent, setSavingsPercent] = useState('')
+  const [heaterDoorSavingsPercent, setHeaterDoorSavingsPercent] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -936,6 +937,7 @@ function CasemSection() {
         setCostPerUnit(data.cost_per_unit.toString())
         setInstallationCostPerUnit(data.installation_cost_per_unit.toString())
         setSavingsPercent(data.savings_percent.toString())
+        setHeaterDoorSavingsPercent(data.heater_door_savings_percent.toString())
       }
       setLoading(false)
     }
@@ -954,6 +956,7 @@ function CasemSection() {
         cost_per_unit: Number(costPerUnit) || 0,
         installation_cost_per_unit: Number(installationCostPerUnit) || 0,
         savings_percent: Number(savingsPercent) || 0,
+        heater_door_savings_percent: Number(heaterDoorSavingsPercent) || 0,
       })
       .eq('id', true)
     if (error) setError(error.message)
@@ -972,8 +975,9 @@ function CasemSection() {
       <p className="text-sm text-slate-500 dark:text-slate-400">
         GDF (Glass Door Freezer) is captured by door/unit count, not ft — one baseline load
         applies to every GDF line-up. Casem is an RH-adaptive door heater controller: one module
-        per physical GDF unit (cost + installation × number of units); its saving is a %
-        reduction on the baseline load, scaled by total door count.
+        per physical unit (cost + installation × number of units). It also applies to ft-based
+        case/line-ups fitted with a heated door — there the saving is a % reduction on that door
+        type's heater W/ft instead of the GDF baseline load.
       </p>
       <ErrorBox error={error} />
       <form
@@ -994,7 +998,18 @@ function CasemSection() {
             onChange={setInstallationCostPerUnit}
             type="number"
           />
-          <Field label="Casem savings (%)" value={savingsPercent} onChange={setSavingsPercent} type="number" />
+          <Field
+            label="Casem savings on GDF baseline (%)"
+            value={savingsPercent}
+            onChange={setSavingsPercent}
+            type="number"
+          />
+          <Field
+            label="Casem savings on Glacier heater doors (%)"
+            value={heaterDoorSavingsPercent}
+            onChange={setHeaterDoorSavingsPercent}
+            type="number"
+          />
         </div>
         <div className="flex items-center gap-3">
           <button

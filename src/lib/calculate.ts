@@ -15,6 +15,7 @@ export function calculateSavings(
   plantType: PlantType,
   qtyFt: number,
   electricityRate: number,
+  casemHeaterSavingsPercent = 0,
 ): CalculationResult {
   const wPerFtWithDoors =
     caseType.w_per_ft_without_doors * (1 - caseType.savings_percent / 100)
@@ -22,8 +23,10 @@ export function calculateSavings(
   const electricalWWithoutDoors = caseType.w_per_ft_without_doors / plantType.cop
   // Anti-condensation heaters on heated glass draw power directly, not
   // through the compressor — added straight to the with-doors electrical
-  // load rather than divided by COP.
-  const electricalWWithDoors = wPerFtWithDoors / plantType.cop + doorType.heater_watts_per_ft
+  // load rather than divided by COP. Casem (when enabled for the survey)
+  // reduces that heater draw by a % before it's added.
+  const heaterWPerFt = doorType.heater_watts_per_ft * (1 - casemHeaterSavingsPercent / 100)
+  const electricalWWithDoors = wPerFtWithDoors / plantType.cop + heaterWPerFt
 
   const dailyKwhWithout =
     (electricalWWithoutDoors * qtyFt * HOURS_PER_DAY) / 1000

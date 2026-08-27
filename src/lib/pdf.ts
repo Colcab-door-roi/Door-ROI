@@ -145,7 +145,8 @@ export async function generateStoreReport(ctx: ReportContext) {
   y += 6
   const heaterNote =
     doorType.heater_watts_per_ft > 0 ? ` (heated, ${doorType.heater_watts_per_ft} W/ft)` : ''
-  doc.text(`Door type: ${doorType.name}${heaterNote}`, MARGIN, y)
+  const casemNote = store.casem ? ' with Casem' : ''
+  doc.text(`Door type: ${doorType.name}${heaterNote}${casemNote}`, MARGIN, y)
   y += 6
   doc.text(`Electricity rate: ${formatRand(store.electricity_rate)} / kWh`, MARGIN, y)
   y += 10
@@ -195,15 +196,26 @@ export async function generateStoreReport(ctx: ReportContext) {
       const caseType = caseTypes.find((c) => c.id === item.case_type_id)
       if (!caseType) continue
       const qtyFt = item.qty_ft ?? 0
+      const casemActive = store.casem && item.doors && !!item.casem_units
       result = item.doors
-        ? calculateSavings(caseType, doorType, plantType, qtyFt, store.electricity_rate)
+        ? calculateSavings(
+            caseType,
+            doorType,
+            plantType,
+            qtyFt,
+            store.electricity_rate,
+            store.casem ? casemSettings.heater_door_savings_percent : 0,
+          )
         : ZERO_RESULT
       upgradeCost =
         (item.doors ? resolveCost(doorType, qtyFt) : 0) +
         (item.reclad && recladRate ? resolveCost(recladRate, qtyFt) : 0) +
         (item.canopy_led && canopyRate ? resolveCost(canopyRate, qtyFt) : 0) +
         (item.undershelf_led && undershelfRate ? resolveCost(undershelfRate, qtyFt) : 0) +
-        (item.vertical_led ? (qtyFt / 4) * settings.vertical_led_cost_4ft : 0)
+        (item.vertical_led ? (qtyFt / 4) * settings.vertical_led_cost_4ft : 0) +
+        (casemActive
+          ? (casemSettings.cost_per_unit + casemSettings.installation_cost_per_unit) * (item.casem_units ?? 0)
+          : 0)
       qtyDisplay = `${qtyFt} ft`
       totalFt += qtyFt
       caseTypeName = caseType.name
@@ -214,6 +226,7 @@ export async function generateStoreReport(ctx: ReportContext) {
           item.canopy_led ? 'Canopy LED' : '',
           item.undershelf_led ? 'Undershelf LED' : '',
           item.vertical_led ? 'Vertical LED' : '',
+          casemActive ? `Casem x${item.casem_units}` : '',
         ]
           .filter(Boolean)
           .join(', ') || '—'

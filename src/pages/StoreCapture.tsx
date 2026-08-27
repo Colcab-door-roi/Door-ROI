@@ -439,8 +439,12 @@ function StoreProfileForm({
   const [doorTypeId, setDoorTypeId] = useState(existingStore?.door_type_id ?? doorTypes[0]?.id ?? '')
   const [rate, setRate] = useState((existingStore?.electricity_rate ?? defaultRate).toString())
   const [outlying, setOutlying] = useState(existingStore?.outlying ?? false)
+  const [casem, setCasem] = useState(existingStore?.casem ?? false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const selectedDoorType = doorTypes.find((d) => d.id === doorTypeId)
+  const showCasem = (selectedDoorType?.heater_watts_per_ft ?? 0) > 0
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -453,6 +457,7 @@ function StoreProfileForm({
       door_type_id: doorTypeId,
       electricity_rate: Number(rate) || 0,
       outlying,
+      casem: showCasem && casem,
     }
 
     const { data, error } = existingStore
@@ -586,6 +591,13 @@ function StoreProfileForm({
           Outlying (adds outlying labour cost to the whole survey)
         </label>
 
+        {showCasem && (
+          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+            <input type="checkbox" checked={casem} onChange={(e) => setCasem(e.target.checked)} />
+            Casem (RH-adaptive heater control for this heated door)
+          </label>
+        )}
+
         <button
           type="submit"
           disabled={saving || !canSubmit}
@@ -611,6 +623,7 @@ const emptyItemForm = {
   undershelfLed: false,
   verticalLed: false,
   casem: false,
+  casemUnits: '',
   notes: '',
 }
 
@@ -690,6 +703,7 @@ function ItemCapture({
       undershelfLed: item.undershelf_led,
       verticalLed: item.vertical_led,
       casem: item.casem,
+      casemUnits: item.casem_units?.toString() ?? '',
       notes: item.notes ?? '',
     })
   }
@@ -730,6 +744,7 @@ function ItemCapture({
           undershelf_led: form.undershelfLed,
           vertical_led: form.verticalLed,
           casem: false,
+          casem_units: store.casem && form.doors ? Number(form.casemUnits) || 0 : null,
           notes: form.notes || null,
         }
 
@@ -810,6 +825,7 @@ function ItemCapture({
           <p className="text-xs text-slate-500 dark:text-slate-400">
             {rep.name} · {store.visit_date} · {plantType?.name} · {doorType?.name}
             {store.outlying && ' · Outlying'}
+            {store.casem && ' · Casem'}
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
@@ -999,6 +1015,26 @@ function ItemCapture({
                 Vertical LEDs
               </label>
             </div>
+
+            {store.casem && form.doors && (
+              <label className="flex flex-col gap-1">
+                <span className="text-sm text-slate-600 dark:text-slate-400">
+                  Number of cases in this line-up (for Casem cost)
+                </span>
+                <input
+                  required
+                  type="number"
+                  inputMode="numeric"
+                  step="1"
+                  value={form.casemUnits}
+                  onChange={(e) => setForm({ ...form, casemUnits: e.target.value })}
+                  className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+                <span className="text-xs text-slate-400">
+                  One Casem module per physical case, not per ft — a 4dr + 3dr line-up is 2 cases.
+                </span>
+              </label>
+            )}
           </>
         )}
 
@@ -1066,6 +1102,7 @@ function ItemCapture({
                       {item.canopy_led && ' · Canopy LED'}
                       {item.undershelf_led && ' · Undershelf LED'}
                       {item.vertical_led && ' · Vertical LED'}
+                      {store.casem && item.doors && !!item.casem_units && ` · Casem x${item.casem_units}`}
                     </>
                   )}
                 </div>

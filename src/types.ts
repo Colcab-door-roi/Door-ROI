@@ -31,6 +31,7 @@ export interface CasemSettings {
   cost_per_unit: number
   installation_cost_per_unit: number
   savings_percent: number
+  heater_door_savings_percent: number
 }
 
 export interface AppSettings {
@@ -80,6 +81,7 @@ export interface StoreVisit {
   door_type_id: string
   electricity_rate: number
   outlying: boolean
+  casem: boolean
 }
 
 export interface StoreItem {
@@ -97,6 +99,7 @@ export interface StoreItem {
   undershelf_led: boolean
   vertical_led: boolean
   casem: boolean
+  casem_units: number | null
   notes: string | null
 }
 
