@@ -11,6 +11,7 @@ import type {
   DoorType,
   FreezerShape,
   PlantType,
+  PlugInFreezerSettings,
   PlugInFreezerType,
   RemoteFreezerType,
   SalesRep,
@@ -113,8 +114,8 @@ export default function Admin() {
           <div className="flex gap-2 border-b border-slate-200 dark:border-slate-800">
             {(
               [
-                ['case', 'Case/Line-up'],
-                ['gdf', 'GDF'],
+                ['case', 'Door Retrofit'],
+                ['gdf', 'Casem'],
                 ['plugin', 'Plug in Freezer'],
               ] as const
             ).map(([key, label]) => (
@@ -1565,9 +1566,135 @@ function PlugInFreezerTypesSection() {
   )
 }
 
+function PlugInFreezerSettingsSection() {
+  const [settings, setSettings] = useState<PlugInFreezerSettings | null>(null)
+  const [endAllowance, setEndAllowance] = useState('')
+  const [transportCost, setTransportCost] = useState('')
+  const [jointKitCost, setJointKitCost] = useState('')
+  const [superstructure21, setSuperstructure21] = useState('')
+  const [superstructure25, setSuperstructure25] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    async function load() {
+      const { data, error } = await supabase.from('plugin_freezer_settings').select('*').single()
+      if (error) setError(error.message)
+      else if (data) {
+        setSettings(data)
+        setEndAllowance(data.end_case_length_allowance_m.toString())
+        setTransportCost(data.transport_cost_per_m.toString())
+        setJointKitCost(data.back_to_back_joint_kit_cost.toString())
+        setSuperstructure21(data.centre_superstructure_2_1m_cost_per_m.toString())
+        setSuperstructure25(data.centre_superstructure_2_5m_cost_per_m.toString())
+      }
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  async function handleSave(e: FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    setError(null)
+    setSaved(false)
+    const { error } = await supabase
+      .from('plugin_freezer_settings')
+      .update({
+        end_case_length_allowance_m: Number(endAllowance) || 0,
+        transport_cost_per_m: Number(transportCost) || 0,
+        back_to_back_joint_kit_cost: Number(jointKitCost) || 0,
+        centre_superstructure_2_1m_cost_per_m: Number(superstructure21) || 0,
+        centre_superstructure_2_5m_cost_per_m: Number(superstructure25) || 0,
+      })
+      .eq('id', true)
+    if (error) setError(error.message)
+    else {
+      setSaved(true)
+      await logActivity('Plug-in freezer settings updated')
+    }
+    setSaving(false)
+  }
+
+  if (loading) return <Card title="Plug-in freezer settings"><p className="text-sm text-slate-500">Loading…</p></Card>
+  if (!settings) return <Card title="Plug-in freezer settings"><ErrorBox error={error} /></Card>
+
+  return (
+    <Card title="Plug-in freezer settings">
+      <p className="text-sm text-slate-500 dark:text-slate-400">
+        Lineup-level costs that aren't tied to a specific catalog product — apply once per
+        Plug-in Freezer item, on top of the unit costs from the catalogs below.
+      </p>
+      <ErrorBox error={error} />
+      <form
+        onSubmit={handleSave}
+        className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-800"
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <Field
+            label="End case running-length allowance (m)"
+            value={endAllowance}
+            onChange={setEndAllowance}
+            type="number"
+            required
+          />
+          <Field
+            label="Transport cost (R/m)"
+            value={transportCost}
+            onChange={setTransportCost}
+            type="number"
+            required
+          />
+          <Field
+            label="Back-to-back joint kit cost (R)"
+            value={jointKitCost}
+            onChange={setJointKitCost}
+            type="number"
+            required
+          />
+          <Field
+            label="2.1m centre superstructure (R/m)"
+            value={superstructure21}
+            onChange={setSuperstructure21}
+            type="number"
+            required
+          />
+          <Field
+            label="2.5m centre superstructure (R/m)"
+            value={superstructure25}
+            onChange={setSuperstructure25}
+            type="number"
+            required
+          />
+        </div>
+        <p className="text-xs text-slate-400">
+          Running length of a lineup = spine run length + (end case count × the allowance
+          above). Transport prices off the full running length; the centre superstructure
+          prices off the spine run only, at whichever of the two rates is closer to the chosen
+          spine plug-in product's length. The joint kit is priced per back-to-back pair of
+          plug-in spine units.
+        </p>
+        <div className="flex items-center gap-3">
+          <button
+            type="submit"
+            disabled={saving}
+            className="self-start rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
+          >
+            Save
+          </button>
+          {saved && <span className="text-sm text-emerald-600">Saved</span>}
+        </div>
+      </form>
+    </Card>
+  )
+}
+
 function PlugInFreezerSection() {
   return (
     <>
+      <PlugInFreezerSettingsSection />
       <RemoteFreezerTypesSection />
       <PlugInFreezerTypesSection />
     </>

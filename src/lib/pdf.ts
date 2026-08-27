@@ -16,6 +16,7 @@ import type {
   CostRate,
   DoorType,
   PlantType,
+  PlugInFreezerSettings,
   PlugInFreezerType,
   RemoteFreezerType,
   SalesRep,
@@ -35,6 +36,7 @@ interface ReportContext {
   casemSettings: CasemSettings
   remoteFreezerTypes: RemoteFreezerType[]
   plugInFreezerTypes: PlugInFreezerType[]
+  plugInFreezerSettings: PlugInFreezerSettings
   rep: SalesRep | null
 }
 
@@ -110,8 +112,10 @@ export async function generateStoreReport(ctx: ReportContext) {
     casemSettings,
     remoteFreezerTypes,
     plugInFreezerTypes,
+    plugInFreezerSettings,
     rep,
   } = ctx
+  const hasPlugInFreezerItems = items.some((i) => i.is_plugin_freezer)
   const recladRate = costRates.find((r) => r.cost_type === 'reclad')
   const canopyRate = costRates.find((r) => r.cost_type === 'canopy_led')
   const undershelfRate = costRates.find((r) => r.cost_type === 'undershelf_led')
@@ -166,6 +170,10 @@ export async function generateStoreReport(ctx: ReportContext) {
   y += 6
   doc.text(`Refrigeration plant: ${plantType.name} (COP ${plantType.cop})`, MARGIN, y)
   y += 6
+  if (hasPlugInFreezerItems) {
+    doc.text(`Freezer COP: ${plantType.freezer_cop}`, MARGIN, y)
+    y += 6
+  }
   const heaterNote =
     doorType.heater_watts_per_ft > 0 ? ` (heated, ${doorType.heater_watts_per_ft} W/ft)` : ''
   const casemNote = store.casem ? ' with Casem' : ''
@@ -195,7 +203,6 @@ export async function generateStoreReport(ctx: ReportContext) {
   let totalAnnualCost = 0
   let totalUpgradeCost = 0
   let totalFt = 0
-  let hasPlugInFreezerItems = false
 
   for (const item of items) {
     const category = categories.find((c) => c.id === item.category_id)
@@ -205,25 +212,50 @@ export async function generateStoreReport(ctx: ReportContext) {
     let qtyDisplay = ''
     let options = ''
     let caseTypeName = ''
+    let costBreakdown = ''
 
     if (item.is_plugin_freezer) {
-      const remoteType = remoteFreezerTypes.find((r) => r.id === item.remote_freezer_type_id)
-      const plugInType = plugInFreezerTypes.find((p) => p.id === item.plugin_freezer_type_id)
-      if (!remoteType || !plugInType) continue
-      hasPlugInFreezerItems = true
-      const remoteQty = item.remote_qty ?? 0
+      const spineRemoteType = remoteFreezerTypes.find((r) => r.id === item.spine_remote_freezer_type_id) ?? null
+      const spinePlugInType = plugInFreezerTypes.find((p) => p.id === item.spine_plugin_freezer_type_id) ?? null
+      const endRemoteType = remoteFreezerTypes.find((r) => r.id === item.end_remote_freezer_type_id) ?? null
+      const endPlugInType = plugInFreezerTypes.find((p) => p.id === item.end_plugin_freezer_type_id) ?? null
+      if (!spineRemoteType && !endRemoteType) continue
+      const spineQty = item.spine_remote_qty ?? 0
+      const endQty = item.end_remote_qty ?? 0
       const plugInResult = calculatePlugInFreezerSavings(
-        remoteType,
-        remoteQty,
-        plugInType,
+        spineRemoteType,
+        spineQty,
+        spinePlugInType,
+        endRemoteType,
+        endQty,
+        endPlugInType,
         plantType.freezer_cop,
         store.electricity_rate,
+        plugInFreezerSettings,
       )
       result = plugInResult
       upgradeCost = plugInResult.investmentCost
-      qtyDisplay = `${remoteQty}x ${remoteType.length_m}m`
-      caseTypeName = remoteType.name
-      options = `-> ${plugInResult.requiredPlugInUnits}x ${plugInType.name}`
+      qtyDisplay =
+        [
+          spineRemoteType ? `${spineQty}x ${spineRemoteType.length_m}m spine` : '',
+          endRemoteType ? `${endQty}x end` : '',
+        ]
+          .filter(Boolean)
+          .join(', ') || '—'
+      caseTypeName = [spineRemoteType?.name, endRemoteType?.name].filter(Boolean).join(' + ')
+      options =
+        '-> ' +
+        ([
+          plugInResult.requiredSpinePlugInUnits > 0 && spinePlugInType
+            ? `${plugInResult.requiredSpinePlugInUnits}x ${spinePlugInType.name}`
+            : '',
+          plugInResult.requiredEndPlugInUnits > 0 && endPlugInType
+            ? `${plugInResult.requiredEndPlugInUnits}x ${endPlugInType.name}`
+            : '',
+        ]
+          .filter(Boolean)
+          .join(' + ') || '—')
+      costBreakdown = `Units ${formatRand(plugInResult.plugInUnitsCost)} + Transport ${formatRand(plugInResult.transportCost)} + Joint kit ${formatRand(plugInResult.jointKitCost)} + Superstructure ${formatRand(plugInResult.centreSuperstructureCost)}`
     } else if (item.is_gdf) {
       const qtyDoors = item.qty_doors ?? 0
       const qtyUnits = item.qty_gdf_units ?? 0
@@ -233,7 +265,7 @@ export async function generateStoreReport(ctx: ReportContext) {
         : 0
       qtyDisplay = `${qtyDoors} dr / ${qtyUnits}u`
       options = item.casem ? 'Casem' : '—'
-      caseTypeName = 'GDF'
+      caseTypeName = 'Casem'
     } else {
       const caseType = caseTypes.find((c) => c.id === item.case_type_id)
       if (!caseType) continue
@@ -289,7 +321,8 @@ export async function generateStoreReport(ctx: ReportContext) {
     ]
 
     const wrappedCells = cellValues.map((value, i) => doc.splitTextToSize(value, COLUMNS[i].width))
-    const noteLines = item.notes ? doc.splitTextToSize(`Note: ${item.notes}`, contentWidth) : []
+    const noteParts = [costBreakdown, item.notes ? `Note: ${item.notes}` : ''].filter(Boolean)
+    const noteLines = noteParts.length ? doc.splitTextToSize(noteParts.join('  —  '), contentWidth) : []
     const rowLines = Math.max(...wrappedCells.map((w) => w.length))
     const rowHeight = rowLines * LINE_HEIGHT + noteLines.length * LINE_HEIGHT + 3
 
@@ -378,14 +411,6 @@ export async function generateStoreReport(ctx: ReportContext) {
     y += 6
   }
   doc.setFont('helvetica', 'normal')
-
-  if (hasPlugInFreezerItems) {
-    y += 6
-    doc.setFontSize(8)
-    doc.setTextColor(120)
-    doc.text('Plug-in freezer cost excludes transport.', MARGIN, y)
-    doc.setTextColor(0)
-  }
 
   if (settings.legal_disclaimer) {
     y += 8

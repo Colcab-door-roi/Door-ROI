@@ -41,6 +41,15 @@ export interface PlugInFreezerType {
   cost_per_unit: number
 }
 
+// Lineup-level costs that aren't tied to a specific catalog product.
+export interface PlugInFreezerSettings {
+  end_case_length_allowance_m: number
+  transport_cost_per_m: number
+  back_to_back_joint_kit_cost: number
+  centre_superstructure_2_1m_cost_per_m: number
+  centre_superstructure_2_5m_cost_per_m: number
+}
+
 export interface DoorType {
   id: string
   name: string
@@ -125,9 +134,12 @@ export interface StoreItem {
   casem: boolean
   casem_units: number | null
   is_plugin_freezer: boolean
-  remote_freezer_type_id: string | null
-  remote_qty: number | null
-  plugin_freezer_type_id: string | null
+  spine_remote_freezer_type_id: string | null
+  spine_remote_qty: number | null
+  spine_plugin_freezer_type_id: string | null
+  end_remote_freezer_type_id: string | null
+  end_remote_qty: number | null
+  end_plugin_freezer_type_id: string | null
   notes: string | null
 }
 

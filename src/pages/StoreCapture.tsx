@@ -11,6 +11,7 @@ import type {
   CostRate,
   DoorType,
   PlantType,
+  PlugInFreezerSettings,
   PlugInFreezerType,
   RemoteFreezerType,
   SalesRep,
@@ -38,6 +39,7 @@ export default function StoreCapture() {
   const [salesReps, setSalesReps] = useState<SalesRep[]>([])
   const [remoteFreezerTypes, setRemoteFreezerTypes] = useState<RemoteFreezerType[]>([])
   const [plugInFreezerTypes, setPlugInFreezerTypes] = useState<PlugInFreezerType[]>([])
+  const [plugInFreezerSettings, setPlugInFreezerSettings] = useState<PlugInFreezerSettings | null>(null)
 
   const [currentRep, setCurrentRep] = useState<SalesRep | null>(null)
   const [loginDigest, setLoginDigest] = useState<string[]>([])
@@ -60,6 +62,7 @@ export default function StoreCapture() {
         repsRes,
         remoteFreezerRes,
         plugInFreezerRes,
+        plugInFreezerSettingsRes,
       ] = await Promise.all([
         supabase.from('categories').select('*').order('name'),
         supabase.from('case_types').select('*').order('name'),
@@ -71,6 +74,7 @@ export default function StoreCapture() {
         supabase.from('sales_reps').select('*').order('name'),
         supabase.from('remote_freezer_types').select('*').order('name'),
         supabase.from('plugin_freezer_types').select('*').order('name'),
+        supabase.from('plugin_freezer_settings').select('*').single(),
       ])
       const firstError =
         catRes.error ||
@@ -82,7 +86,8 @@ export default function StoreCapture() {
         casemRes.error ||
         repsRes.error ||
         remoteFreezerRes.error ||
-        plugInFreezerRes.error
+        plugInFreezerRes.error ||
+        plugInFreezerSettingsRes.error
       if (firstError) {
         setError(firstError.message)
       } else {
@@ -96,6 +101,7 @@ export default function StoreCapture() {
         setSalesReps(repsRes.data ?? [])
         setRemoteFreezerTypes(remoteFreezerRes.data ?? [])
         setPlugInFreezerTypes(plugInFreezerRes.data ?? [])
+        setPlugInFreezerSettings(plugInFreezerSettingsRes.data)
 
         const storedId = localStorage.getItem(REP_STORAGE_KEY)
         const matched = storedId ? (repsRes.data ?? []).find((r) => r.id === storedId) : null
@@ -199,6 +205,7 @@ export default function StoreCapture() {
       casemSettings={casemSettings}
       remoteFreezerTypes={remoteFreezerTypes}
       plugInFreezerTypes={plugInFreezerTypes}
+      plugInFreezerSettings={plugInFreezerSettings}
       onStoreUpdated={setStore}
       onBackToList={() => {
         setStore(null)
@@ -649,9 +656,12 @@ const emptyItemForm = {
   verticalLed: false,
   casem: false,
   casemUnits: '',
-  remoteFreezerTypeId: '',
-  remoteQty: '',
-  plugInFreezerTypeId: '',
+  spineRemoteFreezerTypeId: '',
+  spineRemoteQty: '',
+  spinePlugInFreezerTypeId: '',
+  endRemoteFreezerTypeId: '',
+  endRemoteQty: '',
+  endPlugInFreezerTypeId: '',
   notes: '',
 }
 
@@ -669,6 +679,7 @@ function ItemCapture({
   casemSettings,
   remoteFreezerTypes,
   plugInFreezerTypes,
+  plugInFreezerSettings,
   onStoreUpdated,
   onBackToList,
 }: {
@@ -685,6 +696,7 @@ function ItemCapture({
   casemSettings: CasemSettings | null
   remoteFreezerTypes: RemoteFreezerType[]
   plugInFreezerTypes: PlugInFreezerType[]
+  plugInFreezerSettings: PlugInFreezerSettings | null
   onStoreUpdated: (store: StoreVisit) => void
   onBackToList: () => void
 }) {
@@ -737,9 +749,12 @@ function ItemCapture({
       verticalLed: item.vertical_led,
       casem: item.casem,
       casemUnits: item.casem_units?.toString() ?? '',
-      remoteFreezerTypeId: item.remote_freezer_type_id ?? '',
-      remoteQty: item.remote_qty?.toString() ?? '',
-      plugInFreezerTypeId: item.plugin_freezer_type_id ?? '',
+      spineRemoteFreezerTypeId: item.spine_remote_freezer_type_id ?? '',
+      spineRemoteQty: item.spine_remote_qty?.toString() ?? '',
+      spinePlugInFreezerTypeId: item.spine_plugin_freezer_type_id ?? '',
+      endRemoteFreezerTypeId: item.end_remote_freezer_type_id ?? '',
+      endRemoteQty: item.end_remote_qty?.toString() ?? '',
+      endPlugInFreezerTypeId: item.end_plugin_freezer_type_id ?? '',
       notes: item.notes ?? '',
     })
   }
@@ -748,7 +763,9 @@ function ItemCapture({
     e.preventDefault()
     if (!form.categoryId) return
     if (form.isPluginFreezer) {
-      if (!form.remoteFreezerTypeId || !form.remoteQty || !form.plugInFreezerTypeId) return
+      const hasSpine = form.spineRemoteFreezerTypeId && form.spineRemoteQty && form.spinePlugInFreezerTypeId
+      const hasEnd = form.endRemoteFreezerTypeId && form.endRemoteQty && form.endPlugInFreezerTypeId
+      if (!hasSpine && !hasEnd) return
     } else if (form.isGdf) {
       if (!form.qtyDoors || !form.qtyGdfUnits) return
     } else if (!form.caseTypeId || !form.qtyFt) {
@@ -772,9 +789,12 @@ function ItemCapture({
       vertical_led: false,
       casem: false,
       casem_units: null,
-      remote_freezer_type_id: null,
-      remote_qty: null,
-      plugin_freezer_type_id: null,
+      spine_remote_freezer_type_id: null,
+      spine_remote_qty: null,
+      spine_plugin_freezer_type_id: null,
+      end_remote_freezer_type_id: null,
+      end_remote_qty: null,
+      end_plugin_freezer_type_id: null,
       notes: form.notes || null,
     }
 
@@ -782,9 +802,12 @@ function ItemCapture({
       ? {
           ...base,
           is_plugin_freezer: true,
-          remote_freezer_type_id: form.remoteFreezerTypeId,
-          remote_qty: Number(form.remoteQty) || 0,
-          plugin_freezer_type_id: form.plugInFreezerTypeId,
+          spine_remote_freezer_type_id: form.spineRemoteFreezerTypeId || null,
+          spine_remote_qty: form.spineRemoteFreezerTypeId ? Number(form.spineRemoteQty) || 0 : null,
+          spine_plugin_freezer_type_id: form.spinePlugInFreezerTypeId || null,
+          end_remote_freezer_type_id: form.endRemoteFreezerTypeId || null,
+          end_remote_qty: form.endRemoteFreezerTypeId ? Number(form.endRemoteQty) || 0 : null,
+          end_plugin_freezer_type_id: form.endPlugInFreezerTypeId || null,
         }
       : form.isGdf
         ? {
@@ -837,7 +860,7 @@ function ItemCapture({
   }
 
   async function handleFinish() {
-    if (!plantType || !doorType || !settings || !casemSettings) return
+    if (!plantType || !doorType || !settings || !casemSettings || !plugInFreezerSettings) return
     setGenerating(true)
     try {
       const doc = await generateStoreReport({
@@ -852,6 +875,7 @@ function ItemCapture({
         casemSettings,
         remoteFreezerTypes,
         plugInFreezerTypes,
+        plugInFreezerSettings,
         rep,
       })
       const blob = doc.output('blob')
@@ -927,7 +951,7 @@ function ItemCapture({
                 : 'text-slate-600 dark:text-slate-400'
             }`}
           >
-            Case / Line-up
+            Door Retrofit
           </button>
           <button
             type="button"
@@ -940,7 +964,7 @@ function ItemCapture({
                 : 'text-slate-600 dark:text-slate-400'
             }`}
           >
-            GDF
+            Casem
           </button>
           <button
             type="button"
@@ -995,57 +1019,133 @@ function ItemCapture({
 
         {form.isPluginFreezer ? (
           <>
-            <label className="flex flex-col gap-1">
-              <span className="text-sm text-slate-600 dark:text-slate-400">
-                Remote freezer currently on site
+            <p className="text-xs text-slate-400">
+              Most lineups have Spine units in the middle with an End unit capping each side —
+              fill in either or both.
+            </p>
+
+            <div className="flex flex-col gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                Spine (middle, double-depth)
               </span>
-              <select
-                required
-                value={form.remoteFreezerTypeId}
-                onChange={(e) => setForm({ ...form, remoteFreezerTypeId: e.target.value })}
-                className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-              >
-                <option value="">— select —</option>
-                {remoteFreezerTypes.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name} ({r.shape}, {r.length_m}m)
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-sm text-slate-600 dark:text-slate-400">How many on site</span>
-              <input
-                required
-                type="number"
-                inputMode="numeric"
-                step="1"
-                value={form.remoteQty}
-                onChange={(e) => setForm({ ...form, remoteQty: e.target.value })}
-                className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-sm text-slate-600 dark:text-slate-400">Replace with</span>
-              <select
-                required
-                value={form.plugInFreezerTypeId}
-                onChange={(e) => setForm({ ...form, plugInFreezerTypeId: e.target.value })}
-                className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-              >
-                <option value="">— select —</option>
-                {plugInFreezerTypes.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.shape}, {p.length_m}m)
-                  </option>
-                ))}
-              </select>
-              <span className="text-xs text-slate-400">
-                The number of plug-in units needed to fill the same space (doubled for spine
-                units, which need two back-to-back to match the depth) is worked out
-                automatically when the report is generated.
+              <label className="flex flex-col gap-1">
+                <span className="text-sm text-slate-600 dark:text-slate-400">
+                  Remote spine unit on site
+                </span>
+                <select
+                  value={form.spineRemoteFreezerTypeId}
+                  onChange={(e) => setForm({ ...form, spineRemoteFreezerTypeId: e.target.value })}
+                  className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                >
+                  <option value="">— none —</option>
+                  {remoteFreezerTypes
+                    .filter((r) => r.shape === 'spine')
+                    .map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name} ({r.length_m}m)
+                      </option>
+                    ))}
+                </select>
+              </label>
+              {form.spineRemoteFreezerTypeId && (
+                <>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm text-slate-600 dark:text-slate-400">How many on site</span>
+                    <input
+                      required
+                      type="number"
+                      inputMode="numeric"
+                      step="1"
+                      value={form.spineRemoteQty}
+                      onChange={(e) => setForm({ ...form, spineRemoteQty: e.target.value })}
+                      className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm text-slate-600 dark:text-slate-400">Replace with</span>
+                    <select
+                      required
+                      value={form.spinePlugInFreezerTypeId}
+                      onChange={(e) => setForm({ ...form, spinePlugInFreezerTypeId: e.target.value })}
+                      className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    >
+                      <option value="">— select —</option>
+                      {plugInFreezerTypes
+                        .filter((p) => p.shape === 'spine')
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} ({p.length_m}m)
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                </>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                End (each side, single-depth)
               </span>
-            </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-sm text-slate-600 dark:text-slate-400">
+                  Remote end unit on site
+                </span>
+                <select
+                  value={form.endRemoteFreezerTypeId}
+                  onChange={(e) => setForm({ ...form, endRemoteFreezerTypeId: e.target.value })}
+                  className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                >
+                  <option value="">— none —</option>
+                  {remoteFreezerTypes
+                    .filter((r) => r.shape === 'end')
+                    .map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name} ({r.length_m}m)
+                      </option>
+                    ))}
+                </select>
+              </label>
+              {form.endRemoteFreezerTypeId && (
+                <>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm text-slate-600 dark:text-slate-400">How many on site</span>
+                    <input
+                      required
+                      type="number"
+                      inputMode="numeric"
+                      step="1"
+                      value={form.endRemoteQty}
+                      onChange={(e) => setForm({ ...form, endRemoteQty: e.target.value })}
+                      className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm text-slate-600 dark:text-slate-400">Replace with</span>
+                    <select
+                      required
+                      value={form.endPlugInFreezerTypeId}
+                      onChange={(e) => setForm({ ...form, endPlugInFreezerTypeId: e.target.value })}
+                      className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    >
+                      <option value="">— select —</option>
+                      {plugInFreezerTypes
+                        .filter((p) => p.shape === 'end')
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} ({p.length_m}m)
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                </>
+              )}
+            </div>
+
+            <span className="text-xs text-slate-400">
+              The number of plug-in units needed, and the transport / joint kit / centre
+              superstructure costs, are worked out automatically when the report is generated.
+            </span>
           </>
         ) : form.isGdf ? (
           <>
@@ -1210,16 +1310,22 @@ function ItemCapture({
         {items.map((item) => {
           const caseType = caseTypes.find((c) => c.id === item.case_type_id)
           const category = categories.find((c) => c.id === item.category_id)
-          const remoteType = remoteFreezerTypes.find((r) => r.id === item.remote_freezer_type_id)
-          const plugInType = plugInFreezerTypes.find((p) => p.id === item.plugin_freezer_type_id)
+          const spineRemoteType = remoteFreezerTypes.find((r) => r.id === item.spine_remote_freezer_type_id)
+          const spinePlugInType = plugInFreezerTypes.find((p) => p.id === item.spine_plugin_freezer_type_id)
+          const endRemoteType = remoteFreezerTypes.find((r) => r.id === item.end_remote_freezer_type_id)
+          const endPlugInType = plugInFreezerTypes.find((p) => p.id === item.end_plugin_freezer_type_id)
           const plugInResult =
-            item.is_plugin_freezer && remoteType && plugInType && plantType
+            item.is_plugin_freezer && plantType && plugInFreezerSettings
               ? calculatePlugInFreezerSavings(
-                  remoteType,
-                  item.remote_qty ?? 0,
-                  plugInType,
+                  spineRemoteType ?? null,
+                  item.spine_remote_qty ?? 0,
+                  spinePlugInType ?? null,
+                  endRemoteType ?? null,
+                  item.end_remote_qty ?? 0,
+                  endPlugInType ?? null,
                   plantType.freezer_cop,
                   store.electricity_rate,
+                  plugInFreezerSettings,
                 )
               : null
           return (
@@ -1230,14 +1336,29 @@ function ItemCapture({
               <div>
                 <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
                   {category?.name} —{' '}
-                  {item.is_plugin_freezer ? remoteType?.name : item.is_gdf ? 'GDF' : caseType?.name}
+                  {item.is_plugin_freezer
+                    ? [spineRemoteType?.name, endRemoteType?.name].filter(Boolean).join(' + ')
+                    : item.is_gdf
+                      ? 'Casem'
+                      : caseType?.name}
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">
                   {item.is_plugin_freezer ? (
                     <>
-                      {item.remote_qty}× {remoteType?.length_m}m
+                      {spineRemoteType && `${item.spine_remote_qty}× ${spineRemoteType.length_m}m spine`}
+                      {spineRemoteType && endRemoteType && ' + '}
+                      {endRemoteType && `${item.end_remote_qty}× end`}
                       {plugInResult &&
-                        ` · Replace with ${plugInResult.requiredPlugInUnits}× ${plugInType?.name}`}
+                        ` · Replace with ${[
+                          plugInResult.requiredSpinePlugInUnits > 0 && spinePlugInType
+                            ? `${plugInResult.requiredSpinePlugInUnits}× ${spinePlugInType.name}`
+                            : '',
+                          plugInResult.requiredEndPlugInUnits > 0 && endPlugInType
+                            ? `${plugInResult.requiredEndPlugInUnits}× ${endPlugInType.name}`
+                            : '',
+                        ]
+                          .filter(Boolean)
+                          .join(' + ')}`}
                     </>
                   ) : item.is_gdf ? (
                     <>

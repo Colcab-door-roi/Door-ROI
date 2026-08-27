@@ -4,6 +4,7 @@ import type {
   CasemSettings,
   DoorType,
   PlantType,
+  PlugInFreezerSettings,
   PlugInFreezerType,
   RemoteFreezerType,
 } from '../types'
@@ -81,46 +82,95 @@ export function calculateGdfCasemSavings(
 }
 
 export interface PlugInFreezerResult extends CalculationResult {
-  requiredPlugInUnits: number
+  runningLengthM: number
+  requiredSpinePlugInUnits: number
+  requiredEndPlugInUnits: number
+  plugInUnitsCost: number
+  transportCost: number
+  jointKitCost: number
+  centreSuperstructureCost: number
   investmentCost: number
 }
 
-// Compares an existing remote (plumbed-in) freezer run against a proposed
-// plug-in replacement. Both are fixed-size catalog products, not per-metre
-// rates, so the remote run's total length determines how many plug-in
-// units are needed to fill the same space — always rounded up to a whole
-// unit. "Spine" remote units merchandise from two sides; the plug-in units
-// are narrow, so two must sit back-to-back to match that depth, doubling
-// the count a same-length "end" swap would need.
+// Compares an existing remote (plumbed-in) freezer lineup against a
+// proposed plug-in replacement. Both catalogs are fixed-size products, not
+// per-metre rates. A lineup is modelled as an optional Spine (double-depth,
+// middle) run plus an optional End (single-depth, capping each side) count
+// — most real lineups have both. The narrow plug-in units need two placed
+// back-to-back to match a spine unit's depth, doubling the count a
+// same-length end swap would need; end units already match depth 1-for-1.
+//
+// "Running length" of the lineup = the spine run's real length plus a flat
+// per-end allowance (an end case's own footprint isn't what determines how
+// much spine run needs filling) — used for transport cost. The centre
+// superstructure only covers the spine run itself, so it's costed off the
+// spine length alone, at whichever of the two standard module rates (2.1m
+// / 2.5m) is closer to the chosen spine plug-in product's own length.
 export function calculatePlugInFreezerSavings(
-  remoteType: RemoteFreezerType,
-  remoteQty: number,
-  plugInType: PlugInFreezerType,
+  spineRemoteType: RemoteFreezerType | null,
+  spineRemoteQty: number,
+  spinePlugInType: PlugInFreezerType | null,
+  endRemoteType: RemoteFreezerType | null,
+  endRemoteQty: number,
+  endPlugInType: PlugInFreezerType | null,
   freezerCop: number,
   electricityRate: number,
+  settings: PlugInFreezerSettings,
 ): PlugInFreezerResult {
-  const remoteRunLengthM = remoteType.length_m * remoteQty
-  const depthMultiplier = remoteType.shape === 'spine' ? 2 : 1
-  const requiredPlugInUnits = Math.ceil(remoteRunLengthM / plugInType.length_m) * depthMultiplier
+  const spineRemoteLengthM = spineRemoteType ? spineRemoteType.length_m * spineRemoteQty : 0
+  const requiredSpinePlugInUnits =
+    spineRemoteType && spinePlugInType && spineRemoteLengthM > 0
+      ? Math.ceil(spineRemoteLengthM / spinePlugInType.length_m) * 2
+      : 0
+  const requiredEndPlugInUnits = endRemoteType && endPlugInType ? endRemoteQty : 0
 
-  // Refrigeration load runs through the plant (divided by the freezer-
-  // specific COP); direct energy is drawn straight, same as a door heater.
-  const remoteWattsTotal =
-    (remoteType.refrigeration_watts_per_m / freezerCop + remoteType.direct_energy_watts_per_m) *
-    remoteRunLengthM
-  const dailyKwhWithout = (remoteWattsTotal * HOURS_PER_DAY) / 1000
-  const dailyKwhWith = requiredPlugInUnits * plugInType.kwh_per_day
+  const runningLengthM = spineRemoteLengthM + endRemoteQty * settings.end_case_length_allowance_m
+
+  const endRemoteLengthM = endRemoteType ? endRemoteType.length_m * endRemoteQty : 0
+  const spineWattsTotal = spineRemoteType
+    ? (spineRemoteType.refrigeration_watts_per_m / freezerCop + spineRemoteType.direct_energy_watts_per_m) *
+      spineRemoteLengthM
+    : 0
+  const endWattsTotal = endRemoteType
+    ? (endRemoteType.refrigeration_watts_per_m / freezerCop + endRemoteType.direct_energy_watts_per_m) *
+      endRemoteLengthM
+    : 0
+
+  const dailyKwhWithout = ((spineWattsTotal + endWattsTotal) * HOURS_PER_DAY) / 1000
+  const dailyKwhWith =
+    requiredSpinePlugInUnits * (spinePlugInType?.kwh_per_day ?? 0) +
+    requiredEndPlugInUnits * (endPlugInType?.kwh_per_day ?? 0)
 
   const dailySavingsKwh = dailyKwhWithout - dailyKwhWith
   const annualSavingsKwh = dailySavingsKwh * 365
+
+  const plugInUnitsCost =
+    requiredSpinePlugInUnits * (spinePlugInType?.cost_per_unit ?? 0) +
+    requiredEndPlugInUnits * (endPlugInType?.cost_per_unit ?? 0)
+  const transportCost = runningLengthM * settings.transport_cost_per_m
+  const jointKitCost = Math.ceil(requiredSpinePlugInUnits / 2) * settings.back_to_back_joint_kit_cost
+  const superstructureRate = spinePlugInType
+    ? Math.abs(spinePlugInType.length_m - 2.1) <= Math.abs(spinePlugInType.length_m - 2.5)
+      ? settings.centre_superstructure_2_1m_cost_per_m
+      : settings.centre_superstructure_2_5m_cost_per_m
+    : 0
+  const centreSuperstructureCost = spineRemoteLengthM * superstructureRate
+
+  const investmentCost = plugInUnitsCost + transportCost + jointKitCost + centreSuperstructureCost
 
   return {
     dailySavingsKwh,
     annualSavingsKwh,
     dailyCostSaving: dailySavingsKwh * electricityRate,
     annualCostSaving: annualSavingsKwh * electricityRate,
-    requiredPlugInUnits,
-    investmentCost: requiredPlugInUnits * plugInType.cost_per_unit,
+    runningLengthM,
+    requiredSpinePlugInUnits,
+    requiredEndPlugInUnits,
+    plugInUnitsCost,
+    transportCost,
+    jointKitCost,
+    centreSuperstructureCost,
+    investmentCost,
   }
 }
 
