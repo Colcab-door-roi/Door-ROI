@@ -55,10 +55,26 @@ export interface CostRate {
   cost_7ft: number
 }
 
+export interface SalesRep {
+  id: string
+  name: string
+  region: string
+  passcode: string
+  last_login: string | null
+  created_at: string
+}
+
+export interface AdminActivityLogEntry {
+  id: string
+  description: string
+  created_at: string
+}
+
 export interface StoreVisit {
   id: string
   store_name: string
-  sales_rep_name: string
+  sales_rep_name: string | null
+  sales_rep_id: string | null
   visit_date: string
   plant_type_id: string
   door_type_id: string

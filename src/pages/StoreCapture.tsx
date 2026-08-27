@@ -10,9 +10,12 @@ import type {
   CostRate,
   DoorType,
   PlantType,
+  SalesRep,
   StoreItem,
   StoreVisit,
 } from '../types'
+
+const REP_STORAGE_KEY = 'fridge-rep-id'
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10)
@@ -29,13 +32,19 @@ export default function StoreCapture() {
   const [costRates, setCostRates] = useState<CostRate[]>([])
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [casemSettings, setCasemSettings] = useState<CasemSettings | null>(null)
+  const [salesReps, setSalesReps] = useState<SalesRep[]>([])
+
+  const [currentRep, setCurrentRep] = useState<SalesRep | null>(null)
+  const [loginDigest, setLoginDigest] = useState<string[]>([])
+  const [checkedStoredLogin, setCheckedStoredLogin] = useState(false)
 
   const [store, setStore] = useState<StoreVisit | null>(null)
   const [items, setItems] = useState<StoreItem[]>([])
+  const [creatingNew, setCreatingNew] = useState(false)
 
   useEffect(() => {
     async function load() {
-      const [catRes, caseRes, plantRes, doorRes, costRes, settingsRes, casemRes] = await Promise.all([
+      const [catRes, caseRes, plantRes, doorRes, costRes, settingsRes, casemRes, repsRes] = await Promise.all([
         supabase.from('categories').select('*').order('name'),
         supabase.from('case_types').select('*').order('name'),
         supabase.from('plant_types').select('*').order('name'),
@@ -43,6 +52,7 @@ export default function StoreCapture() {
         supabase.from('cost_rates').select('*'),
         supabase.from('app_settings').select('*').single(),
         supabase.from('casem_settings').select('*').single(),
+        supabase.from('sales_reps').select('*').order('name'),
       ])
       const firstError =
         catRes.error ||
@@ -51,7 +61,8 @@ export default function StoreCapture() {
         doorRes.error ||
         costRes.error ||
         settingsRes.error ||
-        casemRes.error
+        casemRes.error ||
+        repsRes.error
       if (firstError) {
         setError(firstError.message)
       } else {
@@ -62,13 +73,43 @@ export default function StoreCapture() {
         setCostRates(costRes.data ?? [])
         setSettings(settingsRes.data)
         setCasemSettings(casemRes.data)
+        setSalesReps(repsRes.data ?? [])
+
+        const storedId = localStorage.getItem(REP_STORAGE_KEY)
+        const matched = storedId ? (repsRes.data ?? []).find((r) => r.id === storedId) : null
+        if (matched) setCurrentRep(matched)
+        else if (storedId) localStorage.removeItem(REP_STORAGE_KEY)
       }
       setLoading(false)
+      setCheckedStoredLogin(true)
     }
     load()
   }, [])
 
-  if (loading) {
+  async function loadSurvey(visit: StoreVisit) {
+    const { data, error } = await supabase
+      .from('store_items')
+      .select('*')
+      .eq('store_visit_id', visit.id)
+    if (error) {
+      setError(error.message)
+      return
+    }
+    setItems(data ?? [])
+    setStore(visit)
+    setCreatingNew(false)
+  }
+
+  function handleLogout() {
+    localStorage.removeItem(REP_STORAGE_KEY)
+    setCurrentRep(null)
+    setLoginDigest([])
+    setStore(null)
+    setItems([])
+    setCreatingNew(false)
+  }
+
+  if (loading || !checkedStoredLogin) {
     return <div className="p-4 text-sm text-slate-500 dark:text-slate-400">Loading…</div>
   }
 
@@ -80,13 +121,43 @@ export default function StoreCapture() {
     )
   }
 
-  if (!store) {
+  if (!currentRep) {
     return (
-      <StoreProfileForm
-        plantTypes={plantTypes}
-        doorTypes={doorTypes}
-        defaultRate={settings?.default_electricity_rate ?? 0}
-        onCreated={setStore}
+      <RepLogin
+        reps={salesReps}
+        onLoggedIn={(rep, digest) => {
+          setCurrentRep(rep)
+          setLoginDigest(digest)
+        }}
+      />
+    )
+  }
+
+  if (!store) {
+    if (creatingNew) {
+      return (
+        <StoreProfileForm
+          rep={currentRep}
+          plantTypes={plantTypes}
+          doorTypes={doorTypes}
+          defaultRate={settings?.default_electricity_rate ?? 0}
+          existingStore={null}
+          onSaved={(visit) => {
+            setStore(visit)
+            setItems([])
+            setCreatingNew(false)
+          }}
+          onCancel={() => setCreatingNew(false)}
+        />
+      )
+    }
+    return (
+      <RepLandingPage
+        rep={currentRep}
+        digest={loginDigest}
+        onLogout={handleLogout}
+        onNewSurvey={() => setCreatingNew(true)}
+        onSelectSurvey={loadSurvey}
       />
     )
   }
@@ -94,6 +165,7 @@ export default function StoreCapture() {
   return (
     <ItemCapture
       store={store}
+      rep={currentRep}
       items={items}
       setItems={setItems}
       categories={categories}
@@ -103,7 +175,8 @@ export default function StoreCapture() {
       costRates={costRates}
       settings={settings}
       casemSettings={casemSettings}
-      onNewStore={() => {
+      onStoreUpdated={setStore}
+      onBackToList={() => {
         setStore(null)
         setItems([])
       }}
@@ -111,23 +184,261 @@ export default function StoreCapture() {
   )
 }
 
+function RepLogin({
+  reps,
+  onLoggedIn,
+}: {
+  reps: SalesRep[]
+  onLoggedIn: (rep: SalesRep, digest: string[]) => void
+}) {
+  const [repId, setRepId] = useState(reps[0]?.id ?? '')
+  const [passcode, setPasscode] = useState('')
+  const [error, setError] = useState('')
+  const [loggingIn, setLoggingIn] = useState(false)
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    const repMeta = reps.find((r) => r.id === repId)
+    if (!repMeta) {
+      setError('Select your name')
+      return
+    }
+    setLoggingIn(true)
+    setError('')
+
+    // Re-fetch fresh rather than trusting `reps`, which was loaded once on
+    // page mount — its last_login/passcode can be stale by the time of a
+    // second login in the same session (e.g. after a logout).
+    const { data: rep, error: fetchError } = await supabase
+      .from('sales_reps')
+      .select('*')
+      .eq('id', repMeta.id)
+      .single()
+
+    if (fetchError || !rep) {
+      setLoggingIn(false)
+      setError(fetchError?.message ?? 'Could not load rep')
+      return
+    }
+
+    if (passcode !== rep.passcode) {
+      setLoggingIn(false)
+      setError('Incorrect passcode')
+      return
+    }
+
+    let digest: string[] = []
+    if (rep.last_login) {
+      const { data } = await supabase
+        .from('admin_activity_log')
+        .select('description')
+        .gt('created_at', rep.last_login)
+        .order('created_at', { ascending: false })
+      digest = (data ?? []).map((d) => d.description)
+    }
+
+    const { data: updated, error: updateError } = await supabase
+      .from('sales_reps')
+      .update({ last_login: new Date().toISOString() })
+      .eq('id', rep.id)
+      .select()
+      .single()
+
+    setLoggingIn(false)
+    if (updateError) {
+      setError(updateError.message)
+      return
+    }
+
+    localStorage.setItem(REP_STORAGE_KEY, rep.id)
+    onLoggedIn(updated, digest)
+  }
+
+  return (
+    <div className="mx-auto flex min-h-svh max-w-sm flex-col justify-center gap-4 p-4">
+      <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Sales rep login</h1>
+
+      {reps.length === 0 && (
+        <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          No sales reps set up yet — ask admin to add one.
+        </p>
+      )}
+
+      <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+        <label className="flex flex-col gap-1">
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Name</span>
+          <select
+            required
+            value={repId}
+            onChange={(e) => setRepId(e.target.value)}
+            className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          >
+            {reps.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Passcode</span>
+          <input
+            required
+            type="password"
+            autoFocus
+            value={passcode}
+            onChange={(e) => setPasscode(e.target.value)}
+            className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          />
+        </label>
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+
+        <button
+          type="submit"
+          disabled={loggingIn || reps.length === 0}
+          className="rounded-lg bg-slate-900 p-3 font-medium text-white disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
+        >
+          {loggingIn ? 'Logging in…' : 'Log in'}
+        </button>
+      </form>
+
+      <Link to="/admin" className="text-center text-sm text-slate-400 hover:underline">
+        Admin
+      </Link>
+    </div>
+  )
+}
+
+function RepLandingPage({
+  rep,
+  digest,
+  onLogout,
+  onNewSurvey,
+  onSelectSurvey,
+}: {
+  rep: SalesRep
+  digest: string[]
+  onLogout: () => void
+  onNewSurvey: () => void
+  onSelectSurvey: (visit: StoreVisit) => void
+}) {
+  const [surveys, setSurveys] = useState<StoreVisit[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [digestDismissed, setDigestDismissed] = useState(false)
+
+  useEffect(() => {
+    async function load() {
+      const { data, error } = await supabase
+        .from('store_visits')
+        .select('*')
+        .eq('sales_rep_id', rep.id)
+        .order('visit_date', { ascending: false })
+      if (error) setError(error.message)
+      else setSurveys(data ?? [])
+      setLoading(false)
+    }
+    load()
+  }, [rep.id])
+
+  return (
+    <div className="mx-auto flex min-h-svh max-w-md flex-col gap-6 p-4 pb-16">
+      <header className="flex items-center justify-between pt-4">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">{rep.name}</h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400">{rep.region}</p>
+        </div>
+        <div className="flex gap-3">
+          <Link to="/admin" className="text-sm text-slate-400 hover:underline">
+            Admin
+          </Link>
+          <button onClick={onLogout} className="text-sm text-slate-400 hover:underline">
+            Log out
+          </button>
+        </div>
+      </header>
+
+      {digest.length > 0 && !digestDismissed && (
+        <div className="flex flex-col gap-2 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium text-blue-800 dark:text-blue-300">
+              Updates since your last login
+            </h2>
+            <button
+              onClick={() => setDigestDismissed(true)}
+              className="text-xs text-blue-600 hover:underline dark:text-blue-400"
+            >
+              Dismiss
+            </button>
+          </div>
+          <ul className="flex flex-col gap-1 text-sm text-blue-700 dark:text-blue-300">
+            {digest.map((d, i) => (
+              <li key={i}>• {d}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {error && (
+        <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+          {error}
+        </p>
+      )}
+
+      <button
+        onClick={onNewSurvey}
+        className="rounded-lg bg-slate-900 p-3 font-medium text-white dark:bg-slate-100 dark:text-slate-900"
+      >
+        + New store survey
+      </button>
+
+      <section className="flex flex-col gap-2">
+        <h2 className="text-sm font-medium text-slate-700 dark:text-slate-300">
+          Your store surveys ({surveys.length})
+        </h2>
+        {loading && <p className="text-sm text-slate-500">Loading…</p>}
+        {!loading && surveys.length === 0 && (
+          <p className="text-sm text-slate-500 dark:text-slate-400">No store surveys yet.</p>
+        )}
+        {surveys.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => onSelectSurvey(s)}
+            className="flex flex-col items-start rounded-lg border border-slate-200 p-3 text-left dark:border-slate-800"
+          >
+            <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{s.store_name}</span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">{s.visit_date}</span>
+          </button>
+        ))}
+      </section>
+    </div>
+  )
+}
+
 function StoreProfileForm({
+  rep,
   plantTypes,
   doorTypes,
   defaultRate,
-  onCreated,
+  existingStore,
+  onSaved,
+  onCancel,
 }: {
+  rep: SalesRep
   plantTypes: PlantType[]
   doorTypes: DoorType[]
   defaultRate: number
-  onCreated: (store: StoreVisit) => void
+  existingStore: StoreVisit | null
+  onSaved: (store: StoreVisit) => void
+  onCancel: () => void
 }) {
-  const [storeName, setStoreName] = useState('')
-  const [salesRepName, setSalesRepName] = useState('')
-  const [plantTypeId, setPlantTypeId] = useState(plantTypes[0]?.id ?? '')
-  const [doorTypeId, setDoorTypeId] = useState(doorTypes[0]?.id ?? '')
-  const [rate, setRate] = useState(defaultRate.toString())
-  const [outlying, setOutlying] = useState(false)
+  const [storeName, setStoreName] = useState(existingStore?.store_name ?? '')
+  const [plantTypeId, setPlantTypeId] = useState(existingStore?.plant_type_id ?? plantTypes[0]?.id ?? '')
+  const [doorTypeId, setDoorTypeId] = useState(existingStore?.door_type_id ?? doorTypes[0]?.id ?? '')
+  const [rate, setRate] = useState((existingStore?.electricity_rate ?? defaultRate).toString())
+  const [outlying, setOutlying] = useState(existingStore?.outlying ?? false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -135,22 +446,25 @@ function StoreProfileForm({
     e.preventDefault()
     setSaving(true)
     setError(null)
-    const { data, error } = await supabase
-      .from('store_visits')
-      .insert({
-        store_name: storeName,
-        sales_rep_name: salesRepName,
-        visit_date: todayISO(),
-        plant_type_id: plantTypeId,
-        door_type_id: doorTypeId,
-        electricity_rate: Number(rate) || 0,
-        outlying,
-      })
-      .select()
-      .single()
+
+    const payload = {
+      store_name: storeName,
+      plant_type_id: plantTypeId,
+      door_type_id: doorTypeId,
+      electricity_rate: Number(rate) || 0,
+      outlying,
+    }
+
+    const { data, error } = existingStore
+      ? await supabase.from('store_visits').update(payload).eq('id', existingStore.id).select().single()
+      : await supabase
+          .from('store_visits')
+          .insert({ ...payload, visit_date: todayISO(), sales_rep_id: rep.id })
+          .select()
+          .single()
 
     if (error) setError(error.message)
-    else onCreated(data)
+    else onSaved(data)
     setSaving(false)
   }
 
@@ -160,11 +474,11 @@ function StoreProfileForm({
     <div className="mx-auto flex min-h-svh max-w-md flex-col gap-6 p-4 pb-16">
       <header className="flex items-center justify-between pt-4">
         <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-          Store survey
+          {existingStore ? 'Edit store details' : 'New store survey'}
         </h1>
-        <Link to="/admin" className="text-sm text-slate-400 hover:underline">
-          Admin
-        </Link>
+        <button onClick={onCancel} className="text-sm text-slate-400 hover:underline">
+          Cancel
+        </button>
       </header>
 
       {error && (
@@ -199,23 +513,24 @@ function StoreProfileForm({
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Sales rep name</span>
-          <input
-            required
-            value={salesRepName}
-            onChange={(e) => setSalesRepName(e.target.value)}
-            className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-          />
-        </label>
-
-        <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Date</span>
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Sales rep</span>
           <input
             disabled
-            value={todayISO()}
+            value={`${rep.name} (${rep.region})`}
             className="rounded-lg border border-slate-300 bg-slate-100 p-3 text-base text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
           />
         </label>
+
+        {!existingStore && (
+          <label className="flex flex-col gap-1">
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Date</span>
+            <input
+              disabled
+              value={todayISO()}
+              className="rounded-lg border border-slate-300 bg-slate-100 p-3 text-base text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+            />
+          </label>
+        )}
 
         <label className="flex flex-col gap-1">
           <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -276,7 +591,7 @@ function StoreProfileForm({
           disabled={saving || !canSubmit}
           className="rounded-lg bg-slate-900 p-3 font-medium text-white disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
         >
-          Start capturing cases
+          {existingStore ? 'Save changes' : 'Start capturing cases'}
         </button>
       </form>
     </div>
@@ -301,6 +616,7 @@ const emptyItemForm = {
 
 function ItemCapture({
   store,
+  rep,
   items,
   setItems,
   categories,
@@ -310,9 +626,11 @@ function ItemCapture({
   costRates,
   settings,
   casemSettings,
-  onNewStore,
+  onStoreUpdated,
+  onBackToList,
 }: {
   store: StoreVisit
+  rep: SalesRep
   items: StoreItem[]
   setItems: React.Dispatch<React.SetStateAction<StoreItem[]>>
   categories: Category[]
@@ -322,16 +640,35 @@ function ItemCapture({
   costRates: CostRate[]
   settings: AppSettings | null
   casemSettings: CasemSettings | null
-  onNewStore: () => void
+  onStoreUpdated: (store: StoreVisit) => void
+  onBackToList: () => void
 }) {
   const [form, setForm] = useState(emptyItemForm)
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
+  const [editingStoreDetails, setEditingStoreDetails] = useState(false)
 
   const plantType = plantTypes.find((p) => p.id === store.plant_type_id)
   const doorType = doorTypes.find((d) => d.id === store.door_type_id)
+
+  if (editingStoreDetails) {
+    return (
+      <StoreProfileForm
+        rep={rep}
+        plantTypes={plantTypes}
+        doorTypes={doorTypes}
+        defaultRate={settings?.default_electricity_rate ?? 0}
+        existingStore={store}
+        onSaved={(updated) => {
+          onStoreUpdated(updated)
+          setEditingStoreDetails(false)
+        }}
+        onCancel={() => setEditingStoreDetails(false)}
+      />
+    )
+  }
 
   function resetItemForm() {
     setEditingItemId(null)
@@ -440,6 +777,7 @@ function ItemCapture({
         settings,
         costRates,
         casemSettings,
+        rep,
       })
       const blob = doc.output('blob')
       // Wrapping in a named File (not a plain Blob) so the browser's own PDF
@@ -470,13 +808,21 @@ function ItemCapture({
             {store.store_name}
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            {store.sales_rep_name} · {store.visit_date} · {plantType?.name} · {doorType?.name}
+            {rep.name} · {store.visit_date} · {plantType?.name} · {doorType?.name}
             {store.outlying && ' · Outlying'}
           </p>
         </div>
-        <button onClick={onNewStore} className="text-sm text-slate-400 hover:underline">
-          New survey
-        </button>
+        <div className="flex flex-col items-end gap-1">
+          <button onClick={onBackToList} className="text-sm text-slate-400 hover:underline">
+            ← Your surveys
+          </button>
+          <button
+            onClick={() => setEditingStoreDetails(true)}
+            className="text-sm text-slate-400 hover:underline"
+          >
+            Edit store details
+          </button>
+        </div>
       </header>
 
       {error && (

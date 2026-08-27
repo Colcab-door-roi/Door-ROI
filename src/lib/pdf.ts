@@ -10,6 +10,7 @@ import type {
   CostRate,
   DoorType,
   PlantType,
+  SalesRep,
   StoreItem,
   StoreVisit,
 } from '../types'
@@ -24,6 +25,7 @@ interface ReportContext {
   settings: AppSettings
   costRates: CostRate[]
   casemSettings: CasemSettings
+  rep: SalesRep | null
 }
 
 const MARGIN = 14
@@ -86,7 +88,7 @@ function fitToWidth(img: LoadedImage, width: number) {
 }
 
 export async function generateStoreReport(ctx: ReportContext) {
-  const { store, items, caseTypes, categories, plantType, doorType, settings, costRates, casemSettings } = ctx
+  const { store, items, caseTypes, categories, plantType, doorType, settings, costRates, casemSettings, rep } = ctx
   const recladRate = costRates.find((r) => r.cost_type === 'reclad')
   const canopyRate = costRates.find((r) => r.cost_type === 'canopy_led')
   const undershelfRate = costRates.find((r) => r.cost_type === 'undershelf_led')
@@ -131,8 +133,12 @@ export async function generateStoreReport(ctx: ReportContext) {
   doc.setFontSize(11)
   doc.text(`Store: ${store.store_name}`, MARGIN, y)
   y += 6
-  doc.text(`Sales rep: ${store.sales_rep_name}`, MARGIN, y)
+  doc.text(`Sales rep: ${rep?.name ?? store.sales_rep_name ?? 'Unknown'}`, MARGIN, y)
   y += 6
+  if (rep) {
+    doc.text(`Region: ${rep.region}`, MARGIN, y)
+    y += 6
+  }
   doc.text(`Date: ${store.visit_date}`, MARGIN, y)
   y += 6
   doc.text(`Refrigeration plant: ${plantType.name} (COP ${plantType.cop})`, MARGIN, y)

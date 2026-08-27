@@ -1,7 +1,18 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import type { AppSettings, CasemSettings, CaseType, Category, CostRate, DoorType, PlantType } from '../types'
+import { logActivity } from '../lib/activityLog'
+import type {
+  AppSettings,
+  CasemSettings,
+  CaseType,
+  Category,
+  CostRate,
+  DoorType,
+  PlantType,
+  SalesRep,
+  StoreVisit,
+} from '../types'
 
 const PASSCODE = import.meta.env.VITE_ADMIN_PASSCODE as string | undefined
 const SESSION_KEY = 'fridge-admin-unlocked'
@@ -12,6 +23,7 @@ export default function Admin() {
   )
   const [passcodeInput, setPasscodeInput] = useState('')
   const [passcodeError, setPasscodeError] = useState('')
+  const [tab, setTab] = useState<'data' | 'reps'>('data')
 
   if (!unlocked) {
     return (
@@ -69,13 +81,42 @@ export default function Admin() {
         </Link>
       </header>
 
-      <SettingsSection />
-      <CostRatesSection />
-      <DoorTypesSection />
-      <CasemSection />
-      <CategoriesSection />
-      <CaseTypesSection />
-      <PlantTypesSection />
+      <div className="flex gap-2 border-b border-slate-200 dark:border-slate-800">
+        <button
+          onClick={() => setTab('data')}
+          className={`px-4 py-2 text-sm font-medium ${
+            tab === 'data'
+              ? 'border-b-2 border-slate-900 text-slate-900 dark:border-slate-100 dark:text-slate-100'
+              : 'text-slate-500'
+          }`}
+        >
+          Data
+        </button>
+        <button
+          onClick={() => setTab('reps')}
+          className={`px-4 py-2 text-sm font-medium ${
+            tab === 'reps'
+              ? 'border-b-2 border-slate-900 text-slate-900 dark:border-slate-100 dark:text-slate-100'
+              : 'text-slate-500'
+          }`}
+        >
+          Sales Reps
+        </button>
+      </div>
+
+      {tab === 'data' ? (
+        <>
+          <SettingsSection />
+          <CostRatesSection />
+          <DoorTypesSection />
+          <CasemSection />
+          <CategoriesSection />
+          <CaseTypesSection />
+          <PlantTypesSection />
+        </>
+      ) : (
+        <SalesRepsSection />
+      )}
     </div>
   )
 }
@@ -178,7 +219,10 @@ function SettingsSection() {
       })
       .eq('id', true)
     if (error) setError(error.message)
-    else setSaved(true)
+    else {
+      setSaved(true)
+      await logActivity('Settings updated')
+    }
     setSaving(false)
   }
 
@@ -205,7 +249,10 @@ function SettingsSection() {
       .eq('id', true)
 
     if (saveError) setError(saveError.message)
-    else await load()
+    else {
+      await load()
+      await logActivity(`PDF ${slot} image updated`)
+    }
     setUploading(null)
   }
 
@@ -352,7 +399,11 @@ function CostRatesSection() {
       })
       .eq('cost_type', costType)
     if (error) setError(error.message)
-    else await load()
+    else {
+      const label = rates.find((r) => r.cost_type === costType)?.label ?? costType
+      await load()
+      await logActivity(`${label} cost rate updated`)
+    }
     setSavingType(null)
   }
 
@@ -365,7 +416,10 @@ function CostRatesSection() {
       .update({ vertical_led_cost_4ft: Number(verticalLedCost) || 0 })
       .eq('id', true)
     if (error) setError(error.message)
-    else setVerticalLedSaved(true)
+    else {
+      setVerticalLedSaved(true)
+      await logActivity('Vertical LED cost updated')
+    }
     setVerticalLedSaving(false)
   }
 
@@ -470,16 +524,20 @@ function CategoriesSection() {
     const { error } = await supabase.from('categories').insert({ name: name.trim() })
     if (error) setError(error.message)
     else {
+      await logActivity(`Category added: ${name.trim()}`)
       setName('')
       await load()
     }
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(id: string, deletedName: string) {
     if (!confirm('Delete this category? Case types using it will need reassigning.')) return
     const { error } = await supabase.from('categories').delete().eq('id', id)
     if (error) setError(error.message)
-    else await load()
+    else {
+      await logActivity(`Category deleted: ${deletedName}`)
+      await load()
+    }
   }
 
   return (
@@ -507,7 +565,7 @@ function CategoriesSection() {
             className="flex items-center gap-2 rounded-full border border-slate-300 px-3 py-1 text-sm dark:border-slate-700"
           >
             {c.name}
-            <button onClick={() => handleDelete(c.id)} className="text-red-500 hover:underline">
+            <button onClick={() => handleDelete(c.id, c.name)} className="text-red-500 hover:underline">
               ×
             </button>
           </span>
@@ -582,17 +640,21 @@ function CaseTypesSection() {
 
     if (error) setError(error.message)
     else {
+      await logActivity(editingId ? `Case type updated: ${form.name}` : `Case type added: ${form.name}`)
       resetForm()
       await load()
     }
     setSaving(false)
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(id: string, deletedName: string) {
     if (!confirm('Delete this case type?')) return
     const { error } = await supabase.from('case_types').delete().eq('id', id)
     if (error) setError(error.message)
-    else await load()
+    else {
+      await logActivity(`Case type deleted: ${deletedName}`)
+      await load()
+    }
   }
 
   return (
@@ -663,7 +725,7 @@ function CaseTypesSection() {
               <button onClick={() => startEdit(item)} className="text-sm text-slate-500 hover:underline">
                 Edit
               </button>
-              <button onClick={() => handleDelete(item.id)} className="text-sm text-red-500 hover:underline">
+              <button onClick={() => handleDelete(item.id, item.name)} className="text-sm text-red-500 hover:underline">
                 Delete
               </button>
             </div>
@@ -733,17 +795,21 @@ function DoorTypesSection() {
 
     if (error) setError(error.message)
     else {
+      await logActivity(editingId ? `Door type updated: ${form.name}` : `Door type added: ${form.name}`)
       resetForm()
       await load()
     }
     setSaving(false)
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(id: string, deletedName: string) {
     if (!confirm('Delete this door type?')) return
     const { error } = await supabase.from('door_types').delete().eq('id', id)
     if (error) setError(error.message)
-    else await load()
+    else {
+      await logActivity(`Door type deleted: ${deletedName}`)
+      await load()
+    }
   }
 
   return (
@@ -836,7 +902,7 @@ function DoorTypesSection() {
               <button onClick={() => startEdit(item)} className="text-sm text-slate-500 hover:underline">
                 Edit
               </button>
-              <button onClick={() => handleDelete(item.id)} className="text-sm text-red-500 hover:underline">
+              <button onClick={() => handleDelete(item.id, item.name)} className="text-sm text-red-500 hover:underline">
                 Delete
               </button>
             </div>
@@ -891,7 +957,10 @@ function CasemSection() {
       })
       .eq('id', true)
     if (error) setError(error.message)
-    else setSaved(true)
+    else {
+      setSaved(true)
+      await logActivity('GDF / Casem settings updated')
+    }
     setSaving(false)
   }
 
@@ -992,17 +1061,21 @@ function PlantTypesSection() {
 
     if (error) setError(error.message)
     else {
+      await logActivity(editingId ? `Plant type updated: ${form.name}` : `Plant type added: ${form.name}`)
       resetForm()
       await load()
     }
     setSaving(false)
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(id: string, deletedName: string) {
     if (!confirm('Delete this plant type?')) return
     const { error } = await supabase.from('plant_types').delete().eq('id', id)
     if (error) setError(error.message)
-    else await load()
+    else {
+      await logActivity(`Plant type deleted: ${deletedName}`)
+      await load()
+    }
   }
 
   return (
@@ -1056,12 +1129,211 @@ function PlantTypesSection() {
               <button onClick={() => startEdit(item)} className="text-sm text-slate-500 hover:underline">
                 Edit
               </button>
-              <button onClick={() => handleDelete(item.id)} className="text-sm text-red-500 hover:underline">
+              <button onClick={() => handleDelete(item.id, item.name)} className="text-sm text-red-500 hover:underline">
                 Delete
               </button>
             </div>
           </div>
         ))}
+      </div>
+    </Card>
+  )
+}
+
+// --- Sales reps ---
+
+const emptyRepForm = { name: '', region: '', passcode: '' }
+
+function SalesRepsSection() {
+  const [reps, setReps] = useState<SalesRep[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [form, setForm] = useState(emptyRepForm)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [surveysByRep, setSurveysByRep] = useState<Record<string, StoreVisit[]>>({})
+  const [surveysLoading, setSurveysLoading] = useState<string | null>(null)
+
+  async function load() {
+    setLoading(true)
+    const { data, error } = await supabase.from('sales_reps').select('*').order('name')
+    if (error) setError(error.message)
+    else setReps(data ?? [])
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  function startEdit(rep: SalesRep) {
+    setEditingId(rep.id)
+    setForm({ name: rep.name, region: rep.region, passcode: rep.passcode })
+  }
+
+  function resetForm() {
+    setEditingId(null)
+    setForm(emptyRepForm)
+  }
+
+  async function handleSave(e: FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    setError(null)
+
+    const payload = { name: form.name, region: form.region, passcode: form.passcode }
+
+    const { error } = editingId
+      ? await supabase.from('sales_reps').update(payload).eq('id', editingId)
+      : await supabase.from('sales_reps').insert(payload)
+
+    if (error) setError(error.message)
+    else {
+      await logActivity(editingId ? `Sales rep updated: ${form.name}` : `Sales rep added: ${form.name}`)
+      resetForm()
+      await load()
+    }
+    setSaving(false)
+  }
+
+  async function handleDelete(id: string, name: string) {
+    if (
+      !confirm(
+        `Delete sales rep ${name}? Their past surveys will remain but won't be linked to an account.`,
+      )
+    )
+      return
+    const { error } = await supabase.from('sales_reps').delete().eq('id', id)
+    if (error) setError(error.message)
+    else {
+      await logActivity(`Sales rep deleted: ${name}`)
+      await load()
+    }
+  }
+
+  async function toggleExpand(rep: SalesRep) {
+    if (expandedId === rep.id) {
+      setExpandedId(null)
+      return
+    }
+    setExpandedId(rep.id)
+    if (!surveysByRep[rep.id]) {
+      setSurveysLoading(rep.id)
+      const { data, error } = await supabase
+        .from('store_visits')
+        .select('*')
+        .eq('sales_rep_id', rep.id)
+        .order('visit_date', { ascending: false })
+      if (!error) setSurveysByRep((prev) => ({ ...prev, [rep.id]: data ?? [] }))
+      setSurveysLoading(null)
+    }
+  }
+
+  return (
+    <Card title="Sales reps">
+      <ErrorBox error={error} />
+      <form
+        onSubmit={handleSave}
+        className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-800"
+      >
+        <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300">
+          {editingId ? 'Edit sales rep' : 'Add new sales rep'}
+        </h3>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} required />
+          <Field
+            label="Region"
+            value={form.region}
+            onChange={(v) => setForm({ ...form, region: v })}
+            required
+          />
+          <Field
+            label="Passcode"
+            value={form.passcode}
+            onChange={(v) => setForm({ ...form, passcode: v })}
+            required
+          />
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={saving}
+            className="rounded-lg bg-slate-900 px-4 py-2 font-medium text-white disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
+          >
+            {editingId ? 'Save changes' : 'Add sales rep'}
+          </button>
+          {editingId && (
+            <button
+              type="button"
+              onClick={resetForm}
+              className="rounded-lg border border-slate-300 px-4 py-2 dark:border-slate-700"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      </form>
+
+      <div className="flex flex-col gap-2">
+        {loading && <p className="text-sm text-slate-500">Loading…</p>}
+        {!loading && reps.length === 0 && (
+          <p className="text-sm text-slate-500">No sales reps yet.</p>
+        )}
+        {reps.map((rep) => {
+          const surveys = surveysByRep[rep.id]
+          const isExpanded = expandedId === rep.id
+          return (
+            <div key={rep.id} className="rounded-lg border border-slate-200 dark:border-slate-800">
+              <div className="flex items-center justify-between p-3">
+                <button
+                  onClick={() => toggleExpand(rep)}
+                  className="flex flex-1 items-center justify-between text-left"
+                >
+                  <div>
+                    <div className="font-medium text-slate-900 dark:text-slate-100">{rep.name}</div>
+                    <div className="text-xs text-slate-500">
+                      {rep.region} · Passcode: {rep.passcode} · Last login:{' '}
+                      {rep.last_login ? new Date(rep.last_login).toLocaleString() : 'Never'}
+                      {surveys && ` · ${surveys.length} survey${surveys.length === 1 ? '' : 's'}`}
+                    </div>
+                  </div>
+                  <span className="text-slate-400">{isExpanded ? '▲' : '▼'}</span>
+                </button>
+                <div className="flex gap-2 pl-3">
+                  <button onClick={() => startEdit(rep)} className="text-sm text-slate-500 hover:underline">
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(rep.id, rep.name)}
+                    className="text-sm text-red-500 hover:underline"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+              {isExpanded && (
+                <div className="border-t border-slate-200 p-3 dark:border-slate-800">
+                  {surveysLoading === rep.id && (
+                    <p className="text-sm text-slate-500">Loading surveys…</p>
+                  )}
+                  {surveys && surveys.length === 0 && (
+                    <p className="text-sm text-slate-500">No store surveys yet.</p>
+                  )}
+                  {surveys && surveys.length > 0 && (
+                    <div className="flex flex-col gap-1">
+                      {surveys.map((s) => (
+                        <div key={s.id} className="text-sm text-slate-600 dark:text-slate-400">
+                          {s.store_name} — {s.visit_date}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
     </Card>
   )
