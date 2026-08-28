@@ -457,7 +457,19 @@ export async function generateStoreReport(ctx: ReportContext) {
   const RULE_GAP = 2.5
   const summaryHeight = summaryRows.reduce((h, r) => h + ROW_H + (r.ruleAbove ? RULE_GAP : 0), 0)
   const paybackHeight = paybackText ? 8.5 : 0
-  const blockHeight = summaryHeight + paybackHeight
+
+  // The disclaimer follows directly after this block, so its height has to
+  // be reserved up front too — otherwise anchoring the block to the bottom
+  // of the page leaves no room for it and it gets pushed off the visible
+  // page entirely.
+  doc.setFontSize(8)
+  const disclaimerLines = settings.legal_disclaimer
+    ? doc.splitTextToSize(settings.legal_disclaimer, contentWidth)
+    : []
+  const disclaimerHeight = disclaimerLines.length ? 8 + disclaimerLines.length * LINE_HEIGHT : 0
+  doc.setFontSize(9)
+
+  const blockHeight = summaryHeight + paybackHeight + disclaimerHeight
 
   if (y + blockHeight > pageHeight - footerReserve) {
     doc.addPage()
@@ -490,12 +502,11 @@ export async function generateStoreReport(ctx: ReportContext) {
 
   y = summaryY
 
-  if (settings.legal_disclaimer) {
+  if (disclaimerLines.length) {
     y += 8
     doc.setFontSize(8)
     doc.setTextColor(120)
-    const lines = doc.splitTextToSize(settings.legal_disclaimer, contentWidth)
-    doc.text(lines, MARGIN, y)
+    doc.text(disclaimerLines, MARGIN, y)
     doc.setTextColor(0)
   }
 
