@@ -203,6 +203,7 @@ export async function generateStoreReport(ctx: ReportContext) {
   let totalAnnualCost = 0
   let totalUpgradeCost = 0
   let totalFt = 0
+  let totalPlugInTransportCost = 0
 
   for (const item of items) {
     const category = categories.find((c) => c.id === item.category_id)
@@ -235,7 +236,12 @@ export async function generateStoreReport(ctx: ReportContext) {
         plugInFreezerSettings,
       )
       result = plugInResult
-      upgradeCost = plugInResult.investmentCost
+      // Transport moves into the survey-wide "Subassembly, transport &
+      // labour" line below, same as every other transport/labour cost —
+      // this row's own cost is just the plug-in units and whichever
+      // connection method applies.
+      upgradeCost = plugInResult.plugInUnitsCost + plugInResult.jointKitCost + plugInResult.centreSuperstructureCost
+      totalPlugInTransportCost += plugInResult.transportCost
       qtyDisplay =
         [
           spineRemoteType ? `${spineQty}x ${spineRemoteType.length_m}m spine` : '',
@@ -262,11 +268,7 @@ export async function generateStoreReport(ctx: ReportContext) {
           : item.spine_connection_method === 'joint_kit'
             ? `Joint kit ${formatRand(plugInResult.jointKitCost)}`
             : ''
-      costBreakdown = [
-        `Units ${formatRand(plugInResult.plugInUnitsCost)}`,
-        `Transport ${formatRand(plugInResult.transportCost)}`,
-        connectionCost,
-      ]
+      costBreakdown = [`Units ${formatRand(plugInResult.plugInUnitsCost)}`, connectionCost]
         .filter(Boolean)
         .join(' + ')
     } else if (item.is_gdf) {
@@ -366,18 +368,21 @@ export async function generateStoreReport(ctx: ReportContext) {
     y += 3
   }
 
-  // Store-wide costs (not per-item): always-on subassembly/transport/labour,
-  // plus outlying labour if this survey is flagged outlying. Both price per
-  // 4ft section, applied to the survey's total ft-based footage (GDF doors
-  // aren't measured in feet, so they don't contribute to this total).
-  const subassemblyCost = (totalFt / 4) * settings.subassembly_transport_labour_cost_4ft
+  // Store-wide costs (not per-item): always-on subassembly/transport/labour
+  // (plus any plug-in freezer transport, rolled into the same line since
+  // it's the same kind of cost), plus outlying labour if this survey is
+  // flagged outlying. The ft-based portion prices per 4ft section, applied
+  // to the survey's total ft-based footage (GDF doors aren't measured in
+  // feet, so they don't contribute to this total).
+  const subassemblyCost =
+    (totalFt / 4) * settings.subassembly_transport_labour_cost_4ft + totalPlugInTransportCost
   const outlyingCost = store.outlying ? (totalFt / 4) * settings.outlying_labour_cost_4ft : 0
   totalUpgradeCost += subassemblyCost + outlyingCost
 
   const vatAmount = totalUpgradeCost * (settings.vat_percent / 100)
   const totalInclVat = totalUpgradeCost + vatAmount
 
-  if (y + 70 > pageHeight - footerReserve) {
+  if (y + 20 > pageHeight - footerReserve) {
     doc.addPage()
     y = contentStartY
     drawHeaderImage()
@@ -393,37 +398,97 @@ export async function generateStoreReport(ctx: ReportContext) {
   y += 6
   doc.text(`Total annual cost saved: ${formatRand(totalAnnualCost)}`, MARGIN, y)
   y += 6
-  doc.text(`Subassembly, transport & labour: ${formatRand(subassemblyCost)}`, MARGIN, y)
-  y += 6
-  if (store.outlying) {
-    doc.text(`Outlying labour: ${formatRand(outlyingCost)}`, MARGIN, y)
-    y += 6
-  }
-  doc.text(`Total upgrade investment (Excl. VAT): ${formatRand(totalUpgradeCost)}`, MARGIN, y)
-  y += 6
-  doc.text(`VAT (${settings.vat_percent}%): ${formatRand(vatAmount)}`, MARGIN, y)
-  y += 6
-  doc.text(`Total upgrade investment (Incl. VAT): ${formatRand(totalInclVat)}`, MARGIN, y)
-  y += 6
+  doc.setFont('helvetica', 'normal')
 
+  // Everything else reads as a quote/accounting summary: right-aligned,
+  // near the bottom of whichever page it lands on, with rules above the
+  // subtotal and the grand total.
   const paybackYears = calculatePaybackYears(
     totalUpgradeCost,
     totalAnnualCost,
     settings.annual_price_increase_percent,
   )
-  if (paybackYears !== null) {
-    const escalationNote =
-      settings.annual_price_increase_percent > 0
-        ? ` (assuming ${settings.annual_price_increase_percent}%/yr electricity price increase)`
-        : ''
-    doc.text(
-      `Estimated payback period: ${paybackYears.toFixed(1)} years (excl. VAT)${escalationNote}`,
-      MARGIN,
-      y,
-    )
-    y += 6
+  const escalationNote =
+    paybackYears !== null && settings.annual_price_increase_percent > 0
+      ? ` (assuming ${settings.annual_price_increase_percent}%/yr electricity price increase)`
+      : ''
+  const paybackText =
+    paybackYears !== null
+      ? `Estimated payback period: ${paybackYears.toFixed(1)} years (excl. VAT)${escalationNote}`
+      : null
+
+  interface SummaryRow {
+    label: string
+    value: string
+    bold?: boolean
+    ruleAbove?: boolean
+  }
+  const summaryRows: SummaryRow[] = [
+    { label: 'Subassembly, transport & labour', value: formatRand(subassemblyCost) },
+  ]
+  if (store.outlying) {
+    summaryRows.push({ label: 'Outlying labour', value: formatRand(outlyingCost) })
+  }
+  summaryRows.push(
+    { label: 'Subtotal (Excl. VAT)', value: formatRand(totalUpgradeCost), ruleAbove: true },
+    { label: `VAT (${settings.vat_percent}%)`, value: formatRand(vatAmount) },
+    { label: 'TOTAL (Incl. VAT)', value: formatRand(totalInclVat), bold: true, ruleAbove: true },
+  )
+
+  doc.setFontSize(9)
+  const maxLabelW = Math.max(
+    ...summaryRows.map((r) => {
+      doc.setFont('helvetica', r.bold ? 'bold' : 'normal')
+      return doc.getTextWidth(r.label)
+    }),
+  )
+  const maxValueW = Math.max(
+    ...summaryRows.map((r) => {
+      doc.setFont('helvetica', r.bold ? 'bold' : 'normal')
+      return doc.getTextWidth(r.value)
+    }),
+  )
+  doc.setFont('helvetica', 'normal')
+  const SUMMARY_GAP = 8
+  const summaryWidth = maxLabelW + maxValueW + SUMMARY_GAP
+  const summaryX = pageWidth - MARGIN - summaryWidth
+
+  const ROW_H = 5.5
+  const RULE_GAP = 2.5
+  const summaryHeight = summaryRows.reduce((h, r) => h + ROW_H + (r.ruleAbove ? RULE_GAP : 0), 0)
+  const paybackHeight = paybackText ? 8.5 : 0
+  const blockHeight = summaryHeight + paybackHeight
+
+  if (y + blockHeight > pageHeight - footerReserve) {
+    doc.addPage()
+    y = contentStartY
+    drawHeaderImage()
+  }
+
+  let summaryY = Math.max(y, pageHeight - footerReserve - blockHeight)
+
+  for (const row of summaryRows) {
+    if (row.ruleAbove) {
+      summaryY += RULE_GAP
+      doc.line(summaryX, summaryY - 3.5, summaryX + summaryWidth, summaryY - 3.5)
+    }
+    doc.setFont('helvetica', row.bold ? 'bold' : 'normal')
+    doc.text(row.label, summaryX, summaryY)
+    doc.text(row.value, summaryX + summaryWidth, summaryY, { align: 'right' })
+    summaryY += ROW_H
   }
   doc.setFont('helvetica', 'normal')
+
+  if (paybackText) {
+    summaryY += 2.5
+    doc.setFontSize(11)
+    doc.setFont('helvetica', 'bold')
+    doc.text(paybackText, pageWidth - MARGIN, summaryY, { align: 'right' })
+    doc.setFont('helvetica', 'normal')
+    summaryY += 6
+  }
+
+  y = summaryY
 
   if (settings.legal_disclaimer) {
     y += 8
