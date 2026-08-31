@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf'
 import {
   calculateGdfCasemSavings,
   calculatePaybackYears,
+  calculatePlugInEnergyConsumption,
   calculatePlugInFreezerSavings,
   calculateSavings,
   ZERO_RESULT,
@@ -15,6 +16,8 @@ import type {
   Category,
   CostRate,
   DoorType,
+  EnergyReport,
+  EnergyReportItem,
   PlantType,
   PlugInFreezerSettings,
   PlugInFreezerType,
@@ -63,6 +66,10 @@ function sanitizeFilename(name: string) {
 
 export function reportFilename(store: StoreVisit) {
   return `${sanitizeFilename(store.store_name)} ${store.visit_date}.pdf`
+}
+
+export function plugInEnergyReportFilename(report: EnergyReport) {
+  return `${sanitizeFilename(report.store_name)} Energy Report ${report.visit_date}.pdf`
 }
 
 interface LoadedImage {
@@ -507,6 +514,323 @@ export async function generateStoreReport(ctx: ReportContext) {
     doc.setFontSize(8)
     doc.setTextColor(120)
     doc.text(disclaimerLines, MARGIN, y)
+    doc.setTextColor(0)
+  }
+
+  if (footerImg && footerDims) {
+    const pageCount = doc.getNumberOfPages()
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i)
+      doc.addImage(
+        footerImg.dataUrl,
+        'JPEG',
+        MARGIN + (contentWidth - footerDims.w) / 2,
+        pageHeight - footerDims.h - IMAGE_PADDING,
+        footerDims.w,
+        footerDims.h,
+      )
+    }
+  }
+
+  return doc
+}
+
+// x-position, width (mm) for each column of the energy report table.
+// Category/Product/Qty are plain columns; the six numeric columns sit
+// under two grouped headers (Energy / Cost), each with its own
+// Daily/Monthly/Annual sub-label drawn as a second header row.
+const ENERGY_COLUMNS = [
+  { label: 'Category', x: 14, width: 20, align: 'left' as const },
+  { label: 'Product', x: 34, width: 38, align: 'left' as const },
+  { label: 'Qty', x: 72, width: 10, align: 'right' as const },
+  { label: 'Daily', x: 82, width: 16, align: 'right' as const },
+  { label: 'Monthly', x: 98, width: 18, align: 'right' as const },
+  { label: 'Annual', x: 116, width: 20, align: 'right' as const },
+  { label: 'Daily', x: 136, width: 16, align: 'right' as const },
+  { label: 'Monthly', x: 152, width: 18, align: 'right' as const },
+  { label: 'Annual', x: 170, width: 20, align: 'right' as const },
+]
+
+// Plain rectangles — jsPDF has no charting library, and a single flat
+// grey keeps the chart consistent with the rest of the report's
+// monochrome, formal-document look rather than introducing a one-off
+// brand color.
+function drawAnnualKwhChart(
+  doc: jsPDF,
+  bars: { label: string; value: number }[],
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+) {
+  const maxValue = Math.max(...bars.map((b) => b.value), 1)
+  const gap = 6
+  const barWidth = Math.min(16, (width - gap * (bars.length - 1)) / bars.length)
+  const totalWidth = barWidth * bars.length + gap * (bars.length - 1)
+  let bx = x + (width - totalWidth) / 2
+
+  doc.setFontSize(7.5)
+  for (const bar of bars) {
+    const barHeight = maxValue > 0 ? (bar.value / maxValue) * height : 0
+    const barY = y + height - barHeight
+    doc.setFillColor(90, 90, 90)
+    doc.rect(bx, barY, barWidth, barHeight, 'F')
+    doc.text(formatNumber(bar.value), bx + barWidth / 2, barY - 1.5, { align: 'center' })
+    const labelLines = doc.splitTextToSize(bar.label, barWidth + gap - 1)
+    doc.text(labelLines, bx + barWidth / 2, y + height + 4, { align: 'center' })
+    bx += barWidth + gap
+  }
+  doc.setDrawColor(0)
+  doc.line(x, y + height, x + width, y + height)
+}
+
+interface PlugInEnergyReportContext {
+  report: EnergyReport
+  items: EnergyReportItem[]
+  categories: Category[]
+  plugInFreezerTypes: PlugInFreezerType[]
+  settings: AppSettings
+  rep: SalesRep | null
+}
+
+export async function generatePlugInEnergyReport(ctx: PlugInEnergyReportContext) {
+  const { report, items, categories, plugInFreezerTypes, settings, rep } = ctx
+
+  const [headerImg, footerImg] = await Promise.all([
+    settings.header_image_url ? loadImage(settings.header_image_url) : Promise.resolve(null),
+    settings.footer_image_url ? loadImage(settings.footer_image_url) : Promise.resolve(null),
+  ])
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  doc.setProperties({ title: plugInEnergyReportFilename(report).replace(/\.pdf$/, '') })
+
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const pageHeight = doc.internal.pageSize.getHeight()
+  const contentWidth = pageWidth - MARGIN * 2
+
+  const headerDims = headerImg ? fitToWidth(headerImg, contentWidth) : null
+  const footerDims = footerImg ? fitToWidth(footerImg, contentWidth) : null
+  const contentStartY = headerDims ? IMAGE_PADDING + headerDims.h + IMAGE_PADDING : 20
+  const footerReserve = footerDims ? footerDims.h + IMAGE_PADDING * 2 : 12
+
+  function drawHeaderImage() {
+    if (headerImg && headerDims) {
+      doc.addImage(
+        headerImg.dataUrl,
+        'JPEG',
+        MARGIN + (contentWidth - headerDims.w) / 2,
+        IMAGE_PADDING,
+        headerDims.w,
+        headerDims.h,
+      )
+    }
+  }
+
+  let y = contentStartY
+  drawHeaderImage()
+
+  doc.setFontSize(18)
+  doc.text('Plug-in Freezer — Energy Consumption Report', MARGIN, y)
+  y += 7
+
+  doc.setFontSize(8)
+  doc.setTextColor(120)
+  doc.text('Prepared for product selection purposes — not a replacement or investment proposal.', MARGIN, y)
+  doc.setTextColor(0)
+  y += 8
+
+  doc.setFontSize(11)
+  doc.text(`Store: ${report.store_name}`, MARGIN, y)
+  y += 6
+  doc.text(`Sales rep: ${rep?.name ?? 'Unknown'}`, MARGIN, y)
+  y += 6
+  if (rep) {
+    doc.text(`Region: ${rep.region}`, MARGIN, y)
+    y += 6
+  }
+  doc.text(`Date: ${report.visit_date}`, MARGIN, y)
+  y += 6
+  doc.text(`Electricity rate: ${formatRand(report.electricity_rate)} / kWh`, MARGIN, y)
+  y += 10
+
+  function drawEnergyTableHeader() {
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Category', ENERGY_COLUMNS[0].x, y)
+    doc.text('Product', ENERGY_COLUMNS[1].x, y)
+    doc.text('Qty', ENERGY_COLUMNS[2].x + ENERGY_COLUMNS[2].width, y, { align: 'right' })
+    const energyStart = ENERGY_COLUMNS[3].x
+    const energyEnd = ENERGY_COLUMNS[5].x + ENERGY_COLUMNS[5].width
+    doc.text('Energy (kWh)', (energyStart + energyEnd) / 2, y, { align: 'center' })
+    const costStart = ENERGY_COLUMNS[6].x
+    const costEnd = ENERGY_COLUMNS[8].x + ENERGY_COLUMNS[8].width
+    doc.text('Cost (R excl. VAT)', (costStart + costEnd) / 2, y, { align: 'center' })
+    y += 4.5
+
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8)
+    doc.setTextColor(100)
+    for (let i = 3; i < ENERGY_COLUMNS.length; i++) {
+      const col = ENERGY_COLUMNS[i]
+      doc.text(col.label, col.x + col.width, y, { align: 'right' })
+    }
+    doc.setTextColor(0)
+    y += 5
+    doc.line(MARGIN, y, pageWidth - MARGIN, y)
+    y += 5
+    doc.setFontSize(9)
+  }
+
+  drawEnergyTableHeader()
+
+  let totalDailyKwh = 0
+  let totalMonthlyKwh = 0
+  let totalAnnualKwh = 0
+  let totalDailyCost = 0
+  let totalMonthlyCost = 0
+  let totalAnnualCost = 0
+  let itemCount = 0
+
+  for (const item of items) {
+    const category = categories.find((c) => c.id === item.category_id)
+    const plugInType = plugInFreezerTypes.find((p) => p.id === item.plugin_freezer_type_id)
+    if (!plugInType) continue
+    itemCount++
+
+    const consumption = calculatePlugInEnergyConsumption(plugInType, item.qty, report.electricity_rate)
+    totalDailyKwh += consumption.dailyKwh
+    totalMonthlyKwh += consumption.monthlyKwh
+    totalAnnualKwh += consumption.annualKwh
+    totalDailyCost += consumption.dailyCost
+    totalMonthlyCost += consumption.monthlyCost
+    totalAnnualCost += consumption.annualCost
+
+    const cellValues = [
+      category?.name ?? '—',
+      plugInType.name,
+      item.qty.toString(),
+      formatNumber(consumption.dailyKwh),
+      formatNumber(consumption.monthlyKwh),
+      formatNumber(consumption.annualKwh),
+      formatRand(consumption.dailyCost),
+      formatRand(consumption.monthlyCost),
+      formatRand(consumption.annualCost),
+    ]
+
+    const wrappedCells = cellValues.map((value, i) => doc.splitTextToSize(value, ENERGY_COLUMNS[i].width))
+    const noteLines = item.notes ? doc.splitTextToSize(`Note: ${item.notes}`, contentWidth) : []
+    const rowLines = Math.max(...wrappedCells.map((w) => w.length))
+    const rowHeight = rowLines * LINE_HEIGHT + noteLines.length * LINE_HEIGHT + 3
+
+    if (y + rowHeight > pageHeight - footerReserve) {
+      doc.addPage()
+      y = contentStartY
+      drawHeaderImage()
+      drawEnergyTableHeader()
+    }
+
+    doc.setFontSize(9)
+    wrappedCells.forEach((lines, i) => {
+      const col = ENERGY_COLUMNS[i]
+      doc.text(lines, col.align === 'right' ? col.x + col.width : col.x, y, { align: col.align })
+    })
+    y += rowLines * LINE_HEIGHT
+
+    if (noteLines.length > 0) {
+      doc.setFont('helvetica', 'italic')
+      doc.setTextColor(120)
+      doc.text(noteLines, MARGIN, y)
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(0)
+      y += noteLines.length * LINE_HEIGHT
+    }
+    y += 3
+  }
+
+  if (y + 12 > pageHeight - footerReserve) {
+    doc.addPage()
+    y = contentStartY
+    drawHeaderImage()
+  }
+
+  y += 1
+  doc.line(MARGIN, y, pageWidth - MARGIN, y)
+  y += 6
+  doc.setFont('helvetica', 'bold')
+  doc.text('Total', ENERGY_COLUMNS[0].x, y)
+  const totalValues = [
+    formatNumber(totalDailyKwh),
+    formatNumber(totalMonthlyKwh),
+    formatNumber(totalAnnualKwh),
+    formatRand(totalDailyCost),
+    formatRand(totalMonthlyCost),
+    formatRand(totalAnnualCost),
+  ]
+  totalValues.forEach((value, i) => {
+    const col = ENERGY_COLUMNS[i + 3]
+    doc.text(value, col.x + col.width, y, { align: 'right' })
+  })
+  doc.setFont('helvetica', 'normal')
+  y += 10
+
+  if (itemCount > 0) {
+    // Three columns for the whole proposed lineup (every product line
+    // combined, spine and end units alike): Daily, Monthly, Annual — the
+    // table above already gives the per-product detail, so this is a
+    // single at-a-glance progression rather than a per-product breakdown.
+    const chartHeight = 40
+    const chartBlockHeight = 16 + chartHeight + 10
+    if (y + chartBlockHeight > pageHeight - footerReserve) {
+      doc.addPage()
+      y = contentStartY
+      drawHeaderImage()
+    }
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Total energy consumption (kWh)', MARGIN, y)
+    doc.setFont('helvetica', 'normal')
+    y += 8
+    drawAnnualKwhChart(
+      doc,
+      [
+        { label: 'Daily', value: totalDailyKwh },
+        { label: 'Monthly', value: totalMonthlyKwh },
+        { label: 'Annual', value: totalAnnualKwh },
+      ],
+      MARGIN,
+      y,
+      contentWidth,
+      chartHeight,
+    )
+    y += chartHeight + 10
+  }
+
+  doc.setFontSize(8)
+  doc.setTextColor(120)
+  const caveatLines = doc.splitTextToSize(
+    'Figures are manufacturer-rated energy draw at the electricity rate above and do not account for door-opening frequency, ambient conditions, or load. Provided for comparison purposes only.',
+    contentWidth,
+  )
+  if (y + caveatLines.length * LINE_HEIGHT > pageHeight - footerReserve) {
+    doc.addPage()
+    y = contentStartY
+    drawHeaderImage()
+  }
+  doc.text(caveatLines, MARGIN, y)
+  doc.setTextColor(0)
+  y += caveatLines.length * LINE_HEIGHT
+
+  if (settings.legal_disclaimer) {
+    doc.setFontSize(8)
+    const lines = doc.splitTextToSize(settings.legal_disclaimer, contentWidth)
+    if (y + 8 + lines.length * LINE_HEIGHT > pageHeight - footerReserve) {
+      doc.addPage()
+      y = contentStartY
+      drawHeaderImage()
+    }
+    y += 8
+    doc.setTextColor(120)
+    doc.text(lines, MARGIN, y)
     doc.setTextColor(0)
   }
 

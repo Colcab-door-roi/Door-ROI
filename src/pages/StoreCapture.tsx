@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { calculatePlugInFreezerSavings } from '../lib/calculate'
 import { generateStoreReport, reportFilename } from '../lib/pdf'
+import { EnergyReportItemCapture, EnergyReportProfileForm } from './EnergyReportCapture'
 import type {
   AppSettings,
   CasemSettings,
@@ -10,6 +11,8 @@ import type {
   Category,
   CostRate,
   DoorType,
+  EnergyReport,
+  EnergyReportItem,
   PlantType,
   PlugInFreezerSettings,
   PlugInFreezerType,
@@ -49,6 +52,10 @@ export default function StoreCapture() {
   const [store, setStore] = useState<StoreVisit | null>(null)
   const [items, setItems] = useState<StoreItem[]>([])
   const [creatingNew, setCreatingNew] = useState(false)
+
+  const [energyReport, setEnergyReport] = useState<EnergyReport | null>(null)
+  const [energyReportItems, setEnergyReportItems] = useState<EnergyReportItem[]>([])
+  const [creatingNewEnergyReport, setCreatingNewEnergyReport] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -129,6 +136,20 @@ export default function StoreCapture() {
     setCreatingNew(false)
   }
 
+  async function loadEnergyReport(report: EnergyReport) {
+    const { data, error } = await supabase
+      .from('energy_report_items')
+      .select('*')
+      .eq('energy_report_id', report.id)
+    if (error) {
+      setError(error.message)
+      return
+    }
+    setEnergyReportItems(data ?? [])
+    setEnergyReport(report)
+    setCreatingNewEnergyReport(false)
+  }
+
   function handleLogout() {
     localStorage.removeItem(REP_STORAGE_KEY)
     setCurrentRep(null)
@@ -136,6 +157,9 @@ export default function StoreCapture() {
     setStore(null)
     setItems([])
     setCreatingNew(false)
+    setEnergyReport(null)
+    setEnergyReportItems([])
+    setCreatingNewEnergyReport(false)
   }
 
   if (loading || !checkedStoredLogin) {
@@ -162,24 +186,60 @@ export default function StoreCapture() {
     )
   }
 
+  if (!store && creatingNew) {
+    return (
+      <StoreProfileForm
+        rep={currentRep}
+        plantTypes={plantTypes}
+        doorTypes={doorTypes}
+        defaultRate={settings?.default_electricity_rate ?? 0}
+        existingStore={null}
+        onSaved={(visit) => {
+          setStore(visit)
+          setItems([])
+          setCreatingNew(false)
+        }}
+        onCancel={() => setCreatingNew(false)}
+      />
+    )
+  }
+
+  if (!energyReport && creatingNewEnergyReport) {
+    return (
+      <EnergyReportProfileForm
+        rep={currentRep}
+        defaultRate={settings?.default_electricity_rate ?? 0}
+        existingReport={null}
+        onSaved={(report) => {
+          setEnergyReport(report)
+          setEnergyReportItems([])
+          setCreatingNewEnergyReport(false)
+        }}
+        onCancel={() => setCreatingNewEnergyReport(false)}
+      />
+    )
+  }
+
+  if (!store && energyReport) {
+    return (
+      <EnergyReportItemCapture
+        report={energyReport}
+        rep={currentRep}
+        items={energyReportItems}
+        setItems={setEnergyReportItems}
+        categories={categories}
+        plugInFreezerTypes={plugInFreezerTypes}
+        settings={settings}
+        onReportUpdated={setEnergyReport}
+        onBackToList={() => {
+          setEnergyReport(null)
+          setEnergyReportItems([])
+        }}
+      />
+    )
+  }
+
   if (!store) {
-    if (creatingNew) {
-      return (
-        <StoreProfileForm
-          rep={currentRep}
-          plantTypes={plantTypes}
-          doorTypes={doorTypes}
-          defaultRate={settings?.default_electricity_rate ?? 0}
-          existingStore={null}
-          onSaved={(visit) => {
-            setStore(visit)
-            setItems([])
-            setCreatingNew(false)
-          }}
-          onCancel={() => setCreatingNew(false)}
-        />
-      )
-    }
     return (
       <RepLandingPage
         rep={currentRep}
@@ -187,6 +247,8 @@ export default function StoreCapture() {
         onLogout={handleLogout}
         onNewSurvey={() => setCreatingNew(true)}
         onSelectSurvey={loadSurvey}
+        onNewEnergyReport={() => setCreatingNewEnergyReport(true)}
+        onSelectEnergyReport={loadEnergyReport}
       />
     )
   }
@@ -349,27 +411,43 @@ function RepLandingPage({
   onLogout,
   onNewSurvey,
   onSelectSurvey,
+  onNewEnergyReport,
+  onSelectEnergyReport,
 }: {
   rep: SalesRep
   digest: string[]
   onLogout: () => void
   onNewSurvey: () => void
   onSelectSurvey: (visit: StoreVisit) => void
+  onNewEnergyReport: () => void
+  onSelectEnergyReport: (report: EnergyReport) => void
 }) {
   const [surveys, setSurveys] = useState<StoreVisit[]>([])
+  const [energyReports, setEnergyReports] = useState<EnergyReport[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [digestDismissed, setDigestDismissed] = useState(false)
 
   useEffect(() => {
     async function load() {
-      const { data, error } = await supabase
-        .from('store_visits')
-        .select('*')
-        .eq('sales_rep_id', rep.id)
-        .order('visit_date', { ascending: false })
-      if (error) setError(error.message)
-      else setSurveys(data ?? [])
+      const [surveysRes, energyReportsRes] = await Promise.all([
+        supabase
+          .from('store_visits')
+          .select('*')
+          .eq('sales_rep_id', rep.id)
+          .order('visit_date', { ascending: false }),
+        supabase
+          .from('energy_reports')
+          .select('*')
+          .eq('sales_rep_id', rep.id)
+          .order('visit_date', { ascending: false }),
+      ])
+      const firstError = surveysRes.error || energyReportsRes.error
+      if (firstError) setError(firstError.message)
+      else {
+        setSurveys(surveysRes.data ?? [])
+        setEnergyReports(energyReportsRes.data ?? [])
+      }
       setLoading(false)
     }
     load()
@@ -442,6 +520,33 @@ function RepLandingPage({
           >
             <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{s.store_name}</span>
             <span className="text-xs text-slate-500 dark:text-slate-400">{s.visit_date}</span>
+          </button>
+        ))}
+      </section>
+
+      <button
+        onClick={onNewEnergyReport}
+        className="rounded-lg border-2 border-slate-900 p-3 font-medium text-slate-900 dark:border-slate-100 dark:text-slate-100"
+      >
+        + New energy report
+      </button>
+
+      <section className="flex flex-col gap-2">
+        <h2 className="text-sm font-medium text-slate-700 dark:text-slate-300">
+          Your energy reports ({energyReports.length})
+        </h2>
+        {loading && <p className="text-sm text-slate-500">Loading…</p>}
+        {!loading && energyReports.length === 0 && (
+          <p className="text-sm text-slate-500 dark:text-slate-400">No energy reports yet.</p>
+        )}
+        {energyReports.map((r) => (
+          <button
+            key={r.id}
+            onClick={() => onSelectEnergyReport(r)}
+            className="flex flex-col items-start rounded-lg border border-slate-200 p-3 text-left dark:border-slate-800"
+          >
+            <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{r.store_name}</span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">{r.visit_date}</span>
           </button>
         ))}
       </section>

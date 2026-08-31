@@ -155,3 +155,32 @@ export interface CalculationResult {
   dailyCostSaving: number
   annualCostSaving: number
 }
+
+// Standalone spec-sheet report: a proposed set of plug-in freezer products
+// for a store, with predicted energy consumption and running cost — not
+// tied to the Door ROI survey, no remote comparison, no investment cost.
+export interface EnergyReport {
+  id: string
+  store_name: string
+  sales_rep_id: string
+  visit_date: string
+  electricity_rate: number
+}
+
+export interface EnergyReportItem {
+  id: string
+  energy_report_id: string
+  category_id: string
+  plugin_freezer_type_id: string
+  qty: number
+  notes: string | null
+}
+
+export interface EnergyConsumption {
+  dailyKwh: number
+  monthlyKwh: number
+  annualKwh: number
+  dailyCost: number
+  monthlyCost: number
+  annualCost: number
+}

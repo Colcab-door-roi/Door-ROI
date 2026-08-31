@@ -3,6 +3,7 @@ import type {
   CaseType,
   CasemSettings,
   DoorType,
+  EnergyConsumption,
   PlantType,
   PlugInFreezerSettings,
   PlugInFreezerType,
@@ -184,6 +185,29 @@ export function calculatePlugInFreezerSavings(
     jointKitCost,
     centreSuperstructureCost,
     investmentCost,
+  }
+}
+
+// Plug-in freezer energy report: pure predicted consumption and running
+// cost for a proposed product, independent of any remote/ROI comparison.
+// Monthly is annual ÷ 12 (not daily × 30) so the three figures always
+// reconcile with each other exactly.
+export function calculatePlugInEnergyConsumption(
+  plugInType: PlugInFreezerType,
+  qty: number,
+  electricityRate: number,
+): EnergyConsumption {
+  const dailyKwh = plugInType.kwh_per_day * qty
+  const annualKwh = dailyKwh * 365
+  const monthlyKwh = annualKwh / 12
+
+  return {
+    dailyKwh,
+    monthlyKwh,
+    annualKwh,
+    dailyCost: dailyKwh * electricityRate,
+    monthlyCost: monthlyKwh * electricityRate,
+    annualCost: annualKwh * electricityRate,
   }
 }
 
