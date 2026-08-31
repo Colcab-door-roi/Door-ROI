@@ -188,11 +188,17 @@ function Field({
     <label className="flex flex-col gap-1 text-sm">
       <span className="text-slate-600 dark:text-slate-400">{label}</span>
       <input
-        type={type}
+        // Native type="number" inputs only ever accept "." as a decimal
+        // separator, even on a phone whose keyboard offers a "," key (the
+        // common case on SA/EU locales) — the keystroke is silently
+        // rejected. Using text + inputMode="decimal" keeps the numeric
+        // keyboard on mobile while letting "," through, then normalizing
+        // it to "." here so existing Number(...) parsing keeps working.
+        type={type === 'number' ? 'text' : type}
         inputMode={type === 'number' ? 'decimal' : undefined}
         required={required}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => onChange(type === 'number' ? e.target.value.replace(',', '.') : e.target.value)}
         className="rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
       />
     </label>

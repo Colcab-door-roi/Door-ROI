@@ -609,11 +609,10 @@ function StoreProfileForm({
             Electricity rate (R/kWh)
           </span>
           <input
-            type="number"
+            type="text"
             inputMode="decimal"
-            step="0.01"
             value={rate}
-            onChange={(e) => setRate(e.target.value)}
+            onChange={(e) => setRate(e.target.value.replace(',', '.'))}
             className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
           />
         </label>
@@ -1062,11 +1061,10 @@ function ItemCapture({
                     <span className="text-sm text-slate-600 dark:text-slate-400">How many on site</span>
                     <input
                       required
-                      type="number"
+                      type="text"
                       inputMode="numeric"
-                      step="1"
                       value={form.spineRemoteQty}
-                      onChange={(e) => setForm({ ...form, spineRemoteQty: e.target.value })}
+                      onChange={(e) => setForm({ ...form, spineRemoteQty: e.target.value.replace(',', '.') })}
                       className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                   </label>
@@ -1141,11 +1139,10 @@ function ItemCapture({
                     <span className="text-sm text-slate-600 dark:text-slate-400">How many on site</span>
                     <input
                       required
-                      type="number"
+                      type="text"
                       inputMode="numeric"
-                      step="1"
                       value={form.endRemoteQty}
-                      onChange={(e) => setForm({ ...form, endRemoteQty: e.target.value })}
+                      onChange={(e) => setForm({ ...form, endRemoteQty: e.target.value.replace(',', '.') })}
                       className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                   </label>
@@ -1182,11 +1179,10 @@ function ItemCapture({
               <span className="text-sm text-slate-600 dark:text-slate-400">Number of doors</span>
               <input
                 required
-                type="number"
+                type="text"
                 inputMode="numeric"
-                step="1"
                 value={form.qtyDoors}
-                onChange={(e) => setForm({ ...form, qtyDoors: e.target.value })}
+                onChange={(e) => setForm({ ...form, qtyDoors: e.target.value.replace(',', '.') })}
                 className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
               />
             </label>
@@ -1196,11 +1192,10 @@ function ItemCapture({
               </span>
               <input
                 required
-                type="number"
+                type="text"
                 inputMode="numeric"
-                step="1"
                 value={form.qtyGdfUnits}
-                onChange={(e) => setForm({ ...form, qtyGdfUnits: e.target.value })}
+                onChange={(e) => setForm({ ...form, qtyGdfUnits: e.target.value.replace(',', '.') })}
                 className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
               />
               <span className="text-xs text-slate-400">
@@ -1224,11 +1219,10 @@ function ItemCapture({
               </span>
               <input
                 required
-                type="number"
+                type="text"
                 inputMode="decimal"
-                step="0.1"
                 value={form.qtyFt}
-                onChange={(e) => setForm({ ...form, qtyFt: e.target.value })}
+                onChange={(e) => setForm({ ...form, qtyFt: e.target.value.replace(',', '.') })}
                 className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
               />
             </label>
@@ -1283,11 +1277,10 @@ function ItemCapture({
                 </span>
                 <input
                   required
-                  type="number"
+                  type="text"
                   inputMode="numeric"
-                  step="1"
                   value={form.casemUnits}
-                  onChange={(e) => setForm({ ...form, casemUnits: e.target.value })}
+                  onChange={(e) => setForm({ ...form, casemUnits: e.target.value.replace(',', '.') })}
                   className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                 />
                 <span className="text-xs text-slate-400">
