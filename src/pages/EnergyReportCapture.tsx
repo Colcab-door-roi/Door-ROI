@@ -1,7 +1,15 @@
 import { useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
-import { calculatePlugInEnergyConsumption } from '../lib/calculate'
-import type { AppSettings, Category, EnergyReport, EnergyReportItem, PlugInFreezerType, SalesRep } from '../types'
+import { calculatePlugInEnergyConsumption, calculatePlugInLengthM, findMatchingEndProduct } from '../lib/calculate'
+import type {
+  AppSettings,
+  Category,
+  EnergyReport,
+  EnergyReportItem,
+  PlugInFreezerSettings,
+  PlugInFreezerType,
+  SalesRep,
+} from '../types'
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10)
@@ -129,7 +137,7 @@ export function EnergyReportProfileForm({
   )
 }
 
-const emptyItemForm = { categoryId: '', plugInFreezerTypeId: '', qty: '', notes: '' }
+const emptyItemForm = { categoryId: '', plugInFreezerTypeId: '', qty: '', addMatchingEndCases: false, notes: '' }
 
 export function EnergyReportItemCapture({
   report,
@@ -138,6 +146,7 @@ export function EnergyReportItemCapture({
   setItems,
   categories,
   plugInFreezerTypes,
+  plugInFreezerSettings,
   settings,
   onReportUpdated,
   onBackToList,
@@ -148,6 +157,7 @@ export function EnergyReportItemCapture({
   setItems: React.Dispatch<React.SetStateAction<EnergyReportItem[]>>
   categories: Category[]
   plugInFreezerTypes: PlugInFreezerType[]
+  plugInFreezerSettings: PlugInFreezerSettings | null
   settings: AppSettings | null
   onReportUpdated: (report: EnergyReport) => void
   onBackToList: () => void
@@ -185,6 +195,7 @@ export function EnergyReportItemCapture({
       categoryId: item.category_id,
       plugInFreezerTypeId: item.plugin_freezer_type_id,
       qty: item.qty.toString(),
+      addMatchingEndCases: false,
       notes: item.notes ?? '',
     })
   }
@@ -199,24 +210,45 @@ export function EnergyReportItemCapture({
       category_id: form.categoryId,
       plugin_freezer_type_id: form.plugInFreezerTypeId,
       qty: Number(form.qty) || 0,
+      is_auto_end: false,
       notes: form.notes || null,
     }
 
-    const { data, error } = editingItemId
-      ? await supabase.from('energy_report_items').update(payload).eq('id', editingItemId).select().single()
-      : await supabase
-          .from('energy_report_items')
-          .insert({ ...payload, energy_report_id: report.id })
-          .select()
-          .single()
+    if (editingItemId) {
+      const { data, error } = await supabase
+        .from('energy_report_items')
+        .update(payload)
+        .eq('id', editingItemId)
+        .select()
+        .single()
+      if (error) setError(error.message)
+      else {
+        setItems((prev) => prev.map((i) => (i.id === editingItemId ? data : i)))
+        resetItemForm()
+      }
+      setSaving(false)
+      return
+    }
 
-    if (error) {
-      setError(error.message)
-    } else if (editingItemId) {
-      setItems((prev) => prev.map((i) => (i.id === editingItemId ? data : i)))
-      resetItemForm()
-    } else {
-      setItems((prev) => [...prev, data])
+    // "Add matching end cases" is a one-shot shortcut for new items only:
+    // insert the spine row, then a second row for 2x the matching end
+    // product, so a rep doesn't have to look it up and add it separately.
+    const spineType = plugInFreezerTypes.find((p) => p.id === form.plugInFreezerTypeId)
+    const matchingEnd =
+      form.addMatchingEndCases && spineType ? findMatchingEndProduct(spineType, plugInFreezerTypes) : null
+
+    const rows = matchingEnd
+      ? [payload, { ...payload, plugin_freezer_type_id: matchingEnd.id, qty: 2, is_auto_end: true, notes: null }]
+      : [payload]
+
+    const { data, error } = await supabase
+      .from('energy_report_items')
+      .insert(rows.map((row) => ({ ...row, energy_report_id: report.id })))
+      .select()
+
+    if (error) setError(error.message)
+    else {
+      setItems((prev) => [...prev, ...(data ?? [])])
       resetItemForm()
     }
     setSaving(false)
@@ -233,7 +265,7 @@ export function EnergyReportItemCapture({
   }
 
   async function handleFinish() {
-    if (!settings) return
+    if (!settings || !plugInFreezerSettings) return
     setGenerating(true)
     try {
       const { generatePlugInEnergyReport, plugInEnergyReportFilename } = await import('../lib/pdf')
@@ -242,6 +274,7 @@ export function EnergyReportItemCapture({
         items,
         categories,
         plugInFreezerTypes,
+        plugInFreezerSettings,
         settings,
         rep,
       })
@@ -334,6 +367,31 @@ export function EnergyReportItemCapture({
           </select>
         </label>
 
+        {!editingItemId &&
+          (() => {
+            const spineType = plugInFreezerTypes.find((p) => p.id === form.plugInFreezerTypeId)
+            if (!spineType || spineType.shape !== 'spine') return null
+            const matchingEnd = findMatchingEndProduct(spineType, plugInFreezerTypes)
+            if (!matchingEnd) {
+              return (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  No matching end product in the catalog for {spineType.name} — add one in Admin
+                  to use this shortcut.
+                </p>
+              )
+            }
+            return (
+              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={form.addMatchingEndCases}
+                  onChange={(e) => setForm({ ...form, addMatchingEndCases: e.target.checked })}
+                />
+                Add 2x matching end cases ({matchingEnd.name})
+              </label>
+            )
+          })()}
+
         <label className="flex flex-col gap-1">
           <span className="text-sm text-slate-600 dark:text-slate-400">Quantity</span>
           <input
@@ -378,9 +436,32 @@ export function EnergyReportItemCapture({
       </form>
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium text-slate-700 dark:text-slate-300">
-          Products in this report ({items.length})
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-medium text-slate-700 dark:text-slate-300">
+            Products in this report ({items.length})
+          </h2>
+          {items.length > 0 && plugInFreezerSettings && (
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              Overall length{' '}
+              {items
+                .reduce((sum, item) => {
+                  const plugInType = plugInFreezerTypes.find((p) => p.id === item.plugin_freezer_type_id)
+                  if (!plugInType) return sum
+                  return (
+                    sum +
+                    calculatePlugInLengthM(
+                      plugInType,
+                      item.qty,
+                      item.is_auto_end,
+                      plugInFreezerSettings.end_case_length_allowance_m,
+                    )
+                  )
+                }, 0)
+                .toFixed(2)}
+              m
+            </span>
+          )}
+        </div>
         {items.length === 0 && (
           <p className="text-sm text-slate-500 dark:text-slate-400">No products added yet.</p>
         )}
@@ -391,6 +472,15 @@ export function EnergyReportItemCapture({
             plugInType && report
               ? calculatePlugInEnergyConsumption(plugInType, item.qty, report.electricity_rate)
               : null
+          const lengthM =
+            plugInType && plugInFreezerSettings
+              ? calculatePlugInLengthM(
+                  plugInType,
+                  item.qty,
+                  item.is_auto_end,
+                  plugInFreezerSettings.end_case_length_allowance_m,
+                )
+              : null
           return (
             <div
               key={item.id}
@@ -399,10 +489,14 @@ export function EnergyReportItemCapture({
               <div>
                 <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
                   {category?.name} — {plugInType?.name}
+                  {item.is_auto_end && (
+                    <span className="ml-1 text-xs font-normal text-slate-400">(auto-added end)</span>
+                  )}
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">
                   {item.qty}x
                   {consumption && ` · ${consumption.annualKwh.toFixed(0)} kWh/yr`}
+                  {lengthM !== null && ` · ${lengthM.toFixed(2)}m`}
                 </div>
                 {item.notes && (
                   <div className="mt-1 text-xs italic text-slate-500 dark:text-slate-400">

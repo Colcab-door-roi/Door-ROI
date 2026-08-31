@@ -4,6 +4,7 @@ import {
   calculatePaybackYears,
   calculatePlugInEnergyConsumption,
   calculatePlugInFreezerSavings,
+  calculatePlugInLengthM,
   calculateSavings,
   ZERO_RESULT,
 } from './calculate'
@@ -275,7 +276,11 @@ export async function generateStoreReport(ctx: ReportContext) {
           : item.spine_connection_method === 'joint_kit'
             ? `Joint kit ${formatRand(plugInResult.jointKitCost)}`
             : ''
-      costBreakdown = [`Units ${formatRand(plugInResult.plugInUnitsCost)}`, connectionCost]
+      costBreakdown = [
+        `Units ${formatRand(plugInResult.plugInUnitsCost)}`,
+        connectionCost,
+        `Overall length ${plugInResult.runningLengthM.toFixed(2)}m`,
+      ]
         .filter(Boolean)
         .join(' + ')
     } else if (item.is_gdf) {
@@ -589,12 +594,13 @@ interface PlugInEnergyReportContext {
   items: EnergyReportItem[]
   categories: Category[]
   plugInFreezerTypes: PlugInFreezerType[]
+  plugInFreezerSettings: PlugInFreezerSettings
   settings: AppSettings
   rep: SalesRep | null
 }
 
 export async function generatePlugInEnergyReport(ctx: PlugInEnergyReportContext) {
-  const { report, items, categories, plugInFreezerTypes, settings, rep } = ctx
+  const { report, items, categories, plugInFreezerTypes, plugInFreezerSettings, settings, rep } = ctx
 
   const [headerImg, footerImg] = await Promise.all([
     settings.header_image_url ? loadImage(settings.header_image_url) : Promise.resolve(null),
@@ -689,6 +695,7 @@ export async function generatePlugInEnergyReport(ctx: PlugInEnergyReportContext)
   let totalDailyCost = 0
   let totalMonthlyCost = 0
   let totalAnnualCost = 0
+  let totalLengthM = 0
   let itemCount = 0
 
   for (const item of items) {
@@ -704,10 +711,17 @@ export async function generatePlugInEnergyReport(ctx: PlugInEnergyReportContext)
     totalDailyCost += consumption.dailyCost
     totalMonthlyCost += consumption.monthlyCost
     totalAnnualCost += consumption.annualCost
+    const lengthM = calculatePlugInLengthM(
+      plugInType,
+      item.qty,
+      item.is_auto_end,
+      plugInFreezerSettings.end_case_length_allowance_m,
+    )
+    totalLengthM += lengthM
 
     const cellValues = [
       category?.name ?? '—',
-      plugInType.name,
+      plugInType.name + (item.is_auto_end ? ' (auto end)' : ''),
       item.qty.toString(),
       formatNumber(consumption.dailyKwh),
       formatNumber(consumption.monthlyKwh),
@@ -718,7 +732,10 @@ export async function generatePlugInEnergyReport(ctx: PlugInEnergyReportContext)
     ]
 
     const wrappedCells = cellValues.map((value, i) => doc.splitTextToSize(value, ENERGY_COLUMNS[i].width))
-    const noteLines = item.notes ? doc.splitTextToSize(`Note: ${item.notes}`, contentWidth) : []
+    const noteParts = [`Length ${lengthM.toFixed(2)}m`, item.notes ? `Note: ${item.notes}` : '']
+      .filter(Boolean)
+      .join('  —  ')
+    const noteLines = doc.splitTextToSize(noteParts, contentWidth)
     const rowLines = Math.max(...wrappedCells.map((w) => w.length))
     const rowHeight = rowLines * LINE_HEIGHT + noteLines.length * LINE_HEIGHT + 3
 
@@ -771,7 +788,12 @@ export async function generatePlugInEnergyReport(ctx: PlugInEnergyReportContext)
     doc.text(value, col.x + col.width, y, { align: 'right' })
   })
   doc.setFont('helvetica', 'normal')
-  y += 10
+  y += 6
+  doc.setFontSize(8)
+  doc.setTextColor(100)
+  doc.text(`Overall length: ${totalLengthM.toFixed(2)}m`, ENERGY_COLUMNS[0].x, y)
+  doc.setTextColor(0)
+  y += 8
 
   if (itemCount > 0) {
     // Three columns for the whole proposed lineup (every product line

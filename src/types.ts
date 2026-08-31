@@ -173,6 +173,7 @@ export interface EnergyReportItem {
   category_id: string
   plugin_freezer_type_id: string
   qty: number
+  is_auto_end: boolean
   notes: string | null
 }
 

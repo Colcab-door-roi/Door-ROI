@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { calculatePlugInFreezerSavings } from '../lib/calculate'
+import { calculatePlugInFreezerSavings, findMatchingEndProduct } from '../lib/calculate'
 import { withRetry } from '../lib/withRetry'
 import { EnergyReportItemCapture, EnergyReportProfileForm } from './EnergyReportCapture'
 import type {
@@ -229,6 +229,7 @@ export default function StoreCapture() {
         setItems={setEnergyReportItems}
         categories={categories}
         plugInFreezerTypes={plugInFreezerTypes}
+        plugInFreezerSettings={plugInFreezerSettings}
         settings={settings}
         onReportUpdated={setEnergyReport}
         onBackToList={() => {
@@ -768,6 +769,7 @@ const emptyItemForm = {
   spineRemoteFreezerTypeId: '',
   spineRemoteQty: '',
   spinePlugInFreezerTypeId: '',
+  addMatchingEndCases: false,
   spineConnectionMethod: '' as '' | SpineConnectionMethod,
   endRemoteFreezerTypeId: '',
   endRemoteQty: '',
@@ -862,6 +864,7 @@ function ItemCapture({
       spineRemoteFreezerTypeId: item.spine_remote_freezer_type_id ?? '',
       spineRemoteQty: item.spine_remote_qty?.toString() ?? '',
       spinePlugInFreezerTypeId: item.spine_plugin_freezer_type_id ?? '',
+      addMatchingEndCases: false,
       spineConnectionMethod: item.spine_connection_method ?? '',
       endRemoteFreezerTypeId: item.end_remote_freezer_type_id ?? '',
       endRemoteQty: item.end_remote_qty?.toString() ?? '',
@@ -1200,6 +1203,45 @@ function ItemCapture({
                         ))}
                     </select>
                   </label>
+
+                  {(() => {
+                    const spineType = plugInFreezerTypes.find((p) => p.id === form.spinePlugInFreezerTypeId)
+                    const matchingEnd = spineType ? findMatchingEndProduct(spineType, plugInFreezerTypes) : null
+                    if (!spineType) return null
+                    if (!matchingEnd) {
+                      return (
+                        <p className="text-xs text-amber-600 dark:text-amber-400">
+                          No matching end product in the catalog for {spineType.name} — add one in
+                          Admin to use this shortcut.
+                        </p>
+                      )
+                    }
+                    return (
+                      <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={form.addMatchingEndCases}
+                          onChange={(e) => {
+                            const checked = e.target.checked
+                            setForm({
+                              ...form,
+                              addMatchingEndCases: checked,
+                              endPlugInFreezerTypeId: checked ? matchingEnd.id : '',
+                              endRemoteQty: checked ? '2' : '',
+                            })
+                          }}
+                        />
+                        Add 2x matching end cases ({matchingEnd.name})
+                      </label>
+                    )
+                  })()}
+                  {form.addMatchingEndCases && (
+                    <p className="text-xs text-slate-400">
+                      Pick a remote end type below for these to count towards the savings
+                      comparison — they're already added to the "Replace with" side either way.
+                    </p>
+                  )}
+
                   <label className="flex flex-col gap-1">
                     <span className="text-sm text-slate-600 dark:text-slate-400">
                       How the spine run is joined
@@ -1496,6 +1538,7 @@ function ItemCapture({
                         ]
                           .filter(Boolean)
                           .join(' + ')}`}
+                      {plugInResult && ` · Overall length ${plugInResult.runningLengthM.toFixed(2)}m`}
                     </>
                   ) : item.is_gdf ? (
                     <>

@@ -211,6 +211,32 @@ export function calculatePlugInEnergyConsumption(
   }
 }
 
+// Same product family, opposite shape — e.g. "Yucon - Aruba Solid Side"
+// exists as both a spine and an end catalog row, sharing the same name.
+// Used to auto-fill a matching end product when a rep ticks "add end
+// cases" on a spine selection, in both the Door ROI and energy report
+// flows. Returns null if the catalog has no end variant for that product.
+export function findMatchingEndProduct(
+  spineType: PlugInFreezerType,
+  allTypes: PlugInFreezerType[],
+): PlugInFreezerType | null {
+  return allTypes.find((t) => t.shape === 'end' && t.name === spineType.name) ?? null
+}
+
+// Physical footprint in metres for one energy-report line: a normal row
+// uses the product's own catalog length × qty; an auto-added end pair
+// (qty always 2) uses the admin's end-case allowance instead of the end
+// product's own length, same convention as the Door ROI flow's running
+// length.
+export function calculatePlugInLengthM(
+  plugInType: PlugInFreezerType,
+  qty: number,
+  isAutoEnd: boolean,
+  endCaseLengthAllowanceM: number,
+): number {
+  return isAutoEnd ? qty * endCaseLengthAllowanceM : qty * plugInType.length_m
+}
+
 export { ZERO_RESULT }
 
 const MAX_PAYBACK_YEARS = 50
