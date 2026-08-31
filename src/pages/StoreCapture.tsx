@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { calculatePlugInFreezerSavings } from '../lib/calculate'
-import { generateStoreReport, reportFilename } from '../lib/pdf'
+import { withRetry } from '../lib/withRetry'
 import { EnergyReportItemCapture, EnergyReportProfileForm } from './EnergyReportCapture'
 import type {
   AppSettings,
@@ -72,17 +72,17 @@ export default function StoreCapture() {
         plugInFreezerRes,
         plugInFreezerSettingsRes,
       ] = await Promise.all([
-        supabase.from('categories').select('*').order('name'),
-        supabase.from('case_types').select('*').order('name'),
-        supabase.from('plant_types').select('*').order('name'),
-        supabase.from('door_types').select('*').order('name'),
-        supabase.from('cost_rates').select('*'),
-        supabase.from('app_settings').select('*').single(),
-        supabase.from('casem_settings').select('*').single(),
-        supabase.from('sales_reps').select('*').order('name'),
-        supabase.from('remote_freezer_types').select('*').order('name'),
-        supabase.from('plugin_freezer_types').select('*').order('name'),
-        supabase.from('plugin_freezer_settings').select('*').single(),
+        withRetry(() => supabase.from('categories').select('*').order('name')),
+        withRetry(() => supabase.from('case_types').select('*').order('name')),
+        withRetry(() => supabase.from('plant_types').select('*').order('name')),
+        withRetry(() => supabase.from('door_types').select('*').order('name')),
+        withRetry(() => supabase.from('cost_rates').select('*')),
+        withRetry(() => supabase.from('app_settings').select('*').single()),
+        withRetry(() => supabase.from('casem_settings').select('*').single()),
+        withRetry(() => supabase.from('sales_reps').select('*').order('name')),
+        withRetry(() => supabase.from('remote_freezer_types').select('*').order('name')),
+        withRetry(() => supabase.from('plugin_freezer_types').select('*').order('name')),
+        withRetry(() => supabase.from('plugin_freezer_settings').select('*').single()),
       ])
       const firstError =
         catRes.error ||
@@ -431,16 +431,20 @@ function RepLandingPage({
   useEffect(() => {
     async function load() {
       const [surveysRes, energyReportsRes] = await Promise.all([
-        supabase
-          .from('store_visits')
-          .select('*')
-          .eq('sales_rep_id', rep.id)
-          .order('visit_date', { ascending: false }),
-        supabase
-          .from('energy_reports')
-          .select('*')
-          .eq('sales_rep_id', rep.id)
-          .order('visit_date', { ascending: false }),
+        withRetry(() =>
+          supabase
+            .from('store_visits')
+            .select('*')
+            .eq('sales_rep_id', rep.id)
+            .order('visit_date', { ascending: false }),
+        ),
+        withRetry(() =>
+          supabase
+            .from('energy_reports')
+            .select('*')
+            .eq('sales_rep_id', rep.id)
+            .order('visit_date', { ascending: false }),
+        ),
       ])
       const firstError = surveysRes.error || energyReportsRes.error
       if (firstError) setError(firstError.message)
@@ -976,6 +980,11 @@ function ItemCapture({
     if (!plantType || !doorType || !settings || !casemSettings || !plugInFreezerSettings) return
     setGenerating(true)
     try {
+      // jsPDF pulls in html2canvas + DOMPurify (~230KB gzipped) that no
+      // other part of the app needs — loaded only now, not on every page
+      // view, so browsing/login stays fast for reps who never generate a
+      // report in a given session.
+      const { generateStoreReport, reportFilename } = await import('../lib/pdf')
       const doc = await generateStoreReport({
         store,
         items,

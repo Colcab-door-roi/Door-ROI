@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { calculatePlugInEnergyConsumption } from '../lib/calculate'
-import { generatePlugInEnergyReport, plugInEnergyReportFilename } from '../lib/pdf'
 import type { AppSettings, Category, EnergyReport, EnergyReportItem, PlugInFreezerType, SalesRep } from '../types'
 
 function todayISO() {
@@ -237,6 +236,7 @@ export function EnergyReportItemCapture({
     if (!settings) return
     setGenerating(true)
     try {
+      const { generatePlugInEnergyReport, plugInEnergyReportFilename } = await import('../lib/pdf')
       const doc = await generatePlugInEnergyReport({
         report,
         items,
