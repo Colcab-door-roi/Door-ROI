@@ -428,6 +428,28 @@ function RepLandingPage({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [digestDismissed, setDigestDismissed] = useState(false)
+  const [deletingSurveyId, setDeletingSurveyId] = useState<string | null>(null)
+
+  async function handleDeleteSurvey(visit: StoreVisit) {
+    if (!confirm(`Delete "${visit.store_name}"? This can't be undone.`)) return
+    setDeletingSurveyId(visit.id)
+    setError(null)
+
+    const itemsRes = await withRetry(() => supabase.from('store_items').delete().eq('store_visit_id', visit.id))
+    if (itemsRes.error) {
+      setError(itemsRes.error.message)
+      setDeletingSurveyId(null)
+      return
+    }
+    const visitRes = await withRetry(() => supabase.from('store_visits').delete().eq('id', visit.id))
+    if (visitRes.error) {
+      setError(visitRes.error.message)
+      setDeletingSurveyId(null)
+      return
+    }
+    setSurveys((prev) => prev.filter((s) => s.id !== visit.id))
+    setDeletingSurveyId(null)
+  }
 
   useEffect(() => {
     async function load() {
@@ -518,14 +540,24 @@ function RepLandingPage({
           <p className="text-sm text-slate-500 dark:text-slate-400">No store surveys yet.</p>
         )}
         {surveys.map((s) => (
-          <button
-            key={s.id}
-            onClick={() => onSelectSurvey(s)}
-            className="flex flex-col items-start rounded-lg border border-slate-200 p-3 text-left dark:border-slate-800"
-          >
-            <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{s.store_name}</span>
-            <span className="text-xs text-slate-500 dark:text-slate-400">{s.visit_date}</span>
-          </button>
+          <div key={s.id} className="relative">
+            <button
+              onClick={() => onSelectSurvey(s)}
+              disabled={deletingSurveyId === s.id}
+              className="flex w-full flex-col items-start rounded-lg border border-slate-200 p-3 pr-9 text-left disabled:opacity-50 dark:border-slate-800"
+            >
+              <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{s.store_name}</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">{s.visit_date}</span>
+            </button>
+            <button
+              onClick={() => handleDeleteSurvey(s)}
+              disabled={deletingSurveyId === s.id}
+              aria-label={`Delete ${s.store_name}`}
+              className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-950 dark:hover:text-red-400"
+            >
+              ✕
+            </button>
+          </div>
         ))}
       </section>
 
