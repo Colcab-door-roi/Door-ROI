@@ -429,6 +429,7 @@ function RepLandingPage({
   const [error, setError] = useState<string | null>(null)
   const [digestDismissed, setDigestDismissed] = useState(false)
   const [deletingSurveyId, setDeletingSurveyId] = useState<string | null>(null)
+  const [deletingEnergyReportId, setDeletingEnergyReportId] = useState<string | null>(null)
 
   async function handleDeleteSurvey(visit: StoreVisit) {
     if (!confirm(`Delete "${visit.store_name}"? This can't be undone.`)) return
@@ -449,6 +450,29 @@ function RepLandingPage({
     }
     setSurveys((prev) => prev.filter((s) => s.id !== visit.id))
     setDeletingSurveyId(null)
+  }
+
+  async function handleDeleteEnergyReport(report: EnergyReport) {
+    if (!confirm(`Delete "${report.store_name}"? This can't be undone.`)) return
+    setDeletingEnergyReportId(report.id)
+    setError(null)
+
+    const itemsRes = await withRetry(() =>
+      supabase.from('energy_report_items').delete().eq('energy_report_id', report.id),
+    )
+    if (itemsRes.error) {
+      setError(itemsRes.error.message)
+      setDeletingEnergyReportId(null)
+      return
+    }
+    const reportRes = await withRetry(() => supabase.from('energy_reports').delete().eq('id', report.id))
+    if (reportRes.error) {
+      setError(reportRes.error.message)
+      setDeletingEnergyReportId(null)
+      return
+    }
+    setEnergyReports((prev) => prev.filter((r) => r.id !== report.id))
+    setDeletingEnergyReportId(null)
   }
 
   useEffect(() => {
@@ -577,14 +601,24 @@ function RepLandingPage({
           <p className="text-sm text-slate-500 dark:text-slate-400">No energy reports yet.</p>
         )}
         {energyReports.map((r) => (
-          <button
-            key={r.id}
-            onClick={() => onSelectEnergyReport(r)}
-            className="flex flex-col items-start rounded-lg border border-slate-200 p-3 text-left dark:border-slate-800"
-          >
-            <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{r.store_name}</span>
-            <span className="text-xs text-slate-500 dark:text-slate-400">{r.visit_date}</span>
-          </button>
+          <div key={r.id} className="relative">
+            <button
+              onClick={() => onSelectEnergyReport(r)}
+              disabled={deletingEnergyReportId === r.id}
+              className="flex w-full flex-col items-start rounded-lg border border-slate-200 p-3 pr-9 text-left disabled:opacity-50 dark:border-slate-800"
+            >
+              <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{r.store_name}</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">{r.visit_date}</span>
+            </button>
+            <button
+              onClick={() => handleDeleteEnergyReport(r)}
+              disabled={deletingEnergyReportId === r.id}
+              aria-label={`Delete ${r.store_name}`}
+              className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-950 dark:hover:text-red-400"
+            >
+              ✕
+            </button>
+          </div>
         ))}
       </section>
     </div>
