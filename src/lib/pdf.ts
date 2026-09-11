@@ -575,13 +575,13 @@ export async function generateStoreReport(ctx: ReportContext) {
 // Cost), each with its own Monthly/Annual sub-label drawn as a second
 // header row.
 const ENERGY_COLUMNS = [
-  { label: 'Category', x: 14, width: 24, align: 'left' as const },
-  { label: 'Product', x: 38, width: 46, align: 'left' as const },
-  { label: 'Qty', x: 84, width: 14, align: 'right' as const },
-  { label: 'Monthly', x: 98, width: 24, align: 'right' as const },
-  { label: 'Annual', x: 122, width: 24, align: 'right' as const },
-  { label: 'Monthly', x: 146, width: 24, align: 'right' as const },
-  { label: 'Annual', x: 170, width: 26, align: 'right' as const },
+  { label: 'Category', x: 14, width: 22, align: 'left' as const },
+  { label: 'Product', x: 36, width: 38, align: 'left' as const },
+  { label: 'Qty', x: 74, width: 14, align: 'right' as const },
+  { label: 'Monthly', x: 88, width: 25, align: 'right' as const },
+  { label: 'Annual', x: 113, width: 25, align: 'right' as const },
+  { label: 'Monthly', x: 138, width: 27, align: 'right' as const },
+  { label: 'Annual', x: 165, width: 31, align: 'right' as const },
 ]
 
 // Plain rectangles — jsPDF has no charting library, and a single flat
