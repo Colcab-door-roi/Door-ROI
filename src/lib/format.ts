@@ -8,6 +8,13 @@ function normalizeSpaces(s: string) {
 }
 
 export function formatRand(value: number): string {
+  return `R ${normalizeSpaces(value.toLocaleString('en-ZA', { maximumFractionDigits: 0 }))}`
+}
+
+// Electricity rate is a per-kWh price (typically a few Rand), so unlike
+// every other Rand figure on a report it needs its cents to stay
+// meaningful — rounding R3,31 to R3 changes it by 10%.
+export function formatRandRate(value: number): string {
   return `R ${normalizeSpaces(
     value.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
   )}`

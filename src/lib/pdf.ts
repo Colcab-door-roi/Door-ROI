@@ -9,7 +9,7 @@ import {
   ZERO_RESULT,
 } from './calculate'
 import { resolveCost } from './costs'
-import { formatKwh, formatNumber, formatRand } from './format'
+import { formatKwh, formatNumber, formatRand, formatRandRate } from './format'
 import type {
   AppSettings,
   CasemSettings,
@@ -212,7 +212,7 @@ export async function generateStoreReport(ctx: ReportContext) {
   const casemNote = store.casem ? ' with Casem' : ''
   doc.text(`Door type: ${doorType.name}${heaterNote}${casemNote}`, MARGIN, y)
   y += 6
-  doc.text(`Electricity rate: ${formatRand(store.electricity_rate)} / kWh`, MARGIN, y)
+  doc.text(`Electricity rate: ${formatRandRate(store.electricity_rate)} / kWh`, MARGIN, y)
   y += 10
 
   function drawTableHeader() {
@@ -571,19 +571,17 @@ export async function generateStoreReport(ctx: ReportContext) {
 // x-position, width (mm) for each column of the energy report table —
 // cumulative widths sum to 182mm, spanning the full usable width of A4
 // (210mm page - 14mm margins each side). Category/Product/Qty are plain
-// columns; the six numeric columns sit under two grouped headers (Energy /
-// Cost), each with its own Daily/Monthly/Annual sub-label drawn as a
-// second header row.
+// columns; the four numeric columns sit under two grouped headers (Energy /
+// Cost), each with its own Monthly/Annual sub-label drawn as a second
+// header row.
 const ENERGY_COLUMNS = [
-  { label: 'Category', x: 14, width: 22, align: 'left' as const },
-  { label: 'Product', x: 36, width: 40, align: 'left' as const },
-  { label: 'Qty', x: 76, width: 12, align: 'right' as const },
-  { label: 'Daily', x: 88, width: 16, align: 'right' as const },
-  { label: 'Monthly', x: 104, width: 18, align: 'right' as const },
-  { label: 'Annual', x: 122, width: 20, align: 'right' as const },
-  { label: 'Daily', x: 142, width: 16, align: 'right' as const },
-  { label: 'Monthly', x: 158, width: 18, align: 'right' as const },
-  { label: 'Annual', x: 176, width: 20, align: 'right' as const },
+  { label: 'Category', x: 14, width: 24, align: 'left' as const },
+  { label: 'Product', x: 38, width: 46, align: 'left' as const },
+  { label: 'Qty', x: 84, width: 14, align: 'right' as const },
+  { label: 'Monthly', x: 98, width: 24, align: 'right' as const },
+  { label: 'Annual', x: 122, width: 24, align: 'right' as const },
+  { label: 'Monthly', x: 146, width: 24, align: 'right' as const },
+  { label: 'Annual', x: 170, width: 26, align: 'right' as const },
 ]
 
 // Plain rectangles — jsPDF has no charting library, and a single flat
@@ -686,7 +684,7 @@ export async function generatePlugInEnergyReport(ctx: PlugInEnergyReportContext)
   }
   doc.text(`Date: ${report.visit_date}`, MARGIN, y)
   y += 6
-  doc.text(`Electricity rate: ${formatRand(report.electricity_rate)} / kWh`, MARGIN, y)
+  doc.text(`Electricity rate: ${formatRandRate(report.electricity_rate)} / kWh`, MARGIN, y)
   y += 10
 
   function drawEnergyTableHeader() {
@@ -696,10 +694,10 @@ export async function generatePlugInEnergyReport(ctx: PlugInEnergyReportContext)
     doc.text('Product', ENERGY_COLUMNS[1].x, y)
     doc.text('Qty', ENERGY_COLUMNS[2].x + ENERGY_COLUMNS[2].width, y, { align: 'right' })
     const energyStart = ENERGY_COLUMNS[3].x
-    const energyEnd = ENERGY_COLUMNS[5].x + ENERGY_COLUMNS[5].width
+    const energyEnd = ENERGY_COLUMNS[4].x + ENERGY_COLUMNS[4].width
     doc.text('Energy (kWh)', (energyStart + energyEnd) / 2, y, { align: 'center' })
-    const costStart = ENERGY_COLUMNS[6].x
-    const costEnd = ENERGY_COLUMNS[8].x + ENERGY_COLUMNS[8].width
+    const costStart = ENERGY_COLUMNS[5].x
+    const costEnd = ENERGY_COLUMNS[6].x + ENERGY_COLUMNS[6].width
     doc.text('Cost (R excl. VAT)', (costStart + costEnd) / 2, y, { align: 'center' })
     y += 4.5
 
@@ -719,10 +717,8 @@ export async function generatePlugInEnergyReport(ctx: PlugInEnergyReportContext)
 
   drawEnergyTableHeader()
 
-  let totalDailyKwh = 0
   let totalMonthlyKwh = 0
   let totalAnnualKwh = 0
-  let totalDailyCost = 0
   let totalMonthlyCost = 0
   let totalAnnualCost = 0
   let totalLengthM = 0
@@ -735,10 +731,8 @@ export async function generatePlugInEnergyReport(ctx: PlugInEnergyReportContext)
     itemCount++
 
     const consumption = calculatePlugInEnergyConsumption(plugInType, item.qty, report.electricity_rate)
-    totalDailyKwh += consumption.dailyKwh
     totalMonthlyKwh += consumption.monthlyKwh
     totalAnnualKwh += consumption.annualKwh
-    totalDailyCost += consumption.dailyCost
     totalMonthlyCost += consumption.monthlyCost
     totalAnnualCost += consumption.annualCost
     const lengthM = calculatePlugInLengthM(
@@ -753,10 +747,8 @@ export async function generatePlugInEnergyReport(ctx: PlugInEnergyReportContext)
       category?.name ?? '—',
       plugInType.name + (item.is_auto_end ? ' (auto end)' : ''),
       item.qty.toString(),
-      formatNumber(consumption.dailyKwh),
       formatNumber(consumption.monthlyKwh),
       formatNumber(consumption.annualKwh),
-      formatRand(consumption.dailyCost),
       formatRand(consumption.monthlyCost),
       formatRand(consumption.annualCost),
     ]
@@ -809,10 +801,8 @@ export async function generatePlugInEnergyReport(ctx: PlugInEnergyReportContext)
   doc.setFont('helvetica', 'bold')
   doc.text('Total', ENERGY_COLUMNS[0].x, y)
   const totalValues = [
-    formatNumber(totalDailyKwh),
     formatNumber(totalMonthlyKwh),
     formatNumber(totalAnnualKwh),
-    formatRand(totalDailyCost),
     formatRand(totalMonthlyCost),
     formatRand(totalAnnualCost),
   ]
@@ -829,10 +819,10 @@ export async function generatePlugInEnergyReport(ctx: PlugInEnergyReportContext)
   y += 8
 
   if (itemCount > 0) {
-    // Three columns for the whole proposed lineup (every product line
-    // combined, spine and end units alike): Daily, Monthly, Annual — the
-    // table above already gives the per-product detail, so this is a
-    // single at-a-glance progression rather than a per-product breakdown.
+    // Two columns for the whole proposed lineup (every product line
+    // combined, spine and end units alike): Monthly, Annual — the table
+    // above already gives the per-product detail, so this is a single
+    // at-a-glance progression rather than a per-product breakdown.
     const chartHeight = 40
     const chartBlockHeight = 16 + chartHeight + 10
     if (y + chartBlockHeight > pageHeight - footerReserve) {
@@ -848,7 +838,6 @@ export async function generatePlugInEnergyReport(ctx: PlugInEnergyReportContext)
     drawAnnualKwhChart(
       doc,
       [
-        { label: 'Daily', value: totalDailyKwh },
         { label: 'Monthly', value: totalMonthlyKwh },
         { label: 'Annual', value: totalAnnualKwh },
       ],
