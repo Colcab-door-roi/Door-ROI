@@ -48,21 +48,46 @@ const MARGIN = 14
 const LINE_HEIGHT = 4.2
 const IMAGE_PADDING = 4
 
-// x-position, width (mm) for each column — cumulative widths sum to 168mm,
-// comfortably inside A4's 182mm usable width (210mm page - 14mm margins
-// each side), leaving margin to spare so nothing gets cut off.
+// Gutter reserved on the side of each cell nearest the column's divider
+// line, so wrapped text never touches it — text still sits flush against
+// its own column's outer (left/right-margin) edge.
+const COLUMN_PADDING = 1.5
+const DIVIDER_COLOR = 210
+
+// x-position, width (mm) for each column — cumulative widths sum to 182mm,
+// spanning the full usable width of A4 (210mm page - 14mm margins each
+// side), so the table runs flush from the left margin to the right margin.
 const COLUMNS = [
-  { label: 'Category', x: 14, width: 22, align: 'left' as const },
-  { label: 'Case type', x: 36, width: 32, align: 'left' as const },
-  { label: 'Qty', x: 68, width: 16, align: 'left' as const },
-  { label: 'Options', x: 84, width: 32, align: 'left' as const },
-  { label: 'kWh saved/yr', x: 116, width: 22, align: 'right' as const },
-  { label: 'R saved/yr', x: 138, width: 22, align: 'right' as const },
-  { label: 'Cost (R)', x: 160, width: 22, align: 'right' as const },
+  { label: 'Category', x: 14, width: 24, align: 'left' as const },
+  { label: 'Case type', x: 38, width: 34, align: 'left' as const },
+  { label: 'Qty', x: 72, width: 16, align: 'left' as const },
+  { label: 'Options', x: 88, width: 36, align: 'left' as const },
+  { label: 'kWh saved/yr', x: 124, width: 24, align: 'right' as const },
+  { label: 'R saved/yr', x: 148, width: 24, align: 'right' as const },
+  { label: 'Cost (R)', x: 172, width: 24, align: 'right' as const },
 ]
 
 function sanitizeFilename(name: string) {
   return name.replace(/[\\/:*?"<>|]/g, '-').trim()
+}
+
+// A light grid between columns so dense rows of numbers read as separate
+// fields rather than running together — drawn once per page for the span
+// of rows actually printed on it (top/bottom passed in by the caller).
+function drawColumnDividers(
+  doc: jsPDF,
+  columns: { x: number }[],
+  top: number,
+  bottom: number,
+) {
+  if (bottom <= top) return
+  doc.setDrawColor(DIVIDER_COLOR)
+  doc.setLineWidth(0.1)
+  for (let i = 1; i < columns.length; i++) {
+    doc.line(columns[i].x, top, columns[i].x, bottom)
+  }
+  doc.setDrawColor(0)
+  doc.setLineWidth(0.2)
 }
 
 export function reportFilename(store: StoreVisit) {
@@ -322,7 +347,7 @@ export async function generateStoreReport(ctx: ReportContext) {
       caseTypeName = caseType.name
       options =
         [
-          item.doors ? '' : 'No Doors',
+          item.doors ? doorType.name : 'No Doors',
           item.reclad ? 'Reclad' : '',
           item.canopy_led ? 'Canopy LED' : '',
           item.undershelf_led ? 'Undershelf LED' : '',
@@ -347,7 +372,9 @@ export async function generateStoreReport(ctx: ReportContext) {
       formatRand(upgradeCost),
     ]
 
-    const wrappedCells = cellValues.map((value, i) => doc.splitTextToSize(value, COLUMNS[i].width))
+    const wrappedCells = cellValues.map((value, i) =>
+      doc.splitTextToSize(value, COLUMNS[i].width - COLUMN_PADDING),
+    )
     const noteParts = [costBreakdown, item.notes ? `Note: ${item.notes}` : ''].filter(Boolean)
     const noteLines = noteParts.length ? doc.splitTextToSize(noteParts.join('  —  '), contentWidth) : []
     const rowLines = Math.max(...wrappedCells.map((w) => w.length))
@@ -367,6 +394,7 @@ export async function generateStoreReport(ctx: ReportContext) {
         align: col.align,
       })
     })
+    drawColumnDividers(doc, COLUMNS, y - LINE_HEIGHT + 1, y + (rowLines - 1) * LINE_HEIGHT + 1)
     y += rowLines * LINE_HEIGHT
 
     if (noteLines.length > 0) {
@@ -540,20 +568,22 @@ export async function generateStoreReport(ctx: ReportContext) {
   return doc
 }
 
-// x-position, width (mm) for each column of the energy report table.
-// Category/Product/Qty are plain columns; the six numeric columns sit
-// under two grouped headers (Energy / Cost), each with its own
-// Daily/Monthly/Annual sub-label drawn as a second header row.
+// x-position, width (mm) for each column of the energy report table —
+// cumulative widths sum to 182mm, spanning the full usable width of A4
+// (210mm page - 14mm margins each side). Category/Product/Qty are plain
+// columns; the six numeric columns sit under two grouped headers (Energy /
+// Cost), each with its own Daily/Monthly/Annual sub-label drawn as a
+// second header row.
 const ENERGY_COLUMNS = [
-  { label: 'Category', x: 14, width: 20, align: 'left' as const },
-  { label: 'Product', x: 34, width: 38, align: 'left' as const },
-  { label: 'Qty', x: 72, width: 10, align: 'right' as const },
-  { label: 'Daily', x: 82, width: 16, align: 'right' as const },
-  { label: 'Monthly', x: 98, width: 18, align: 'right' as const },
-  { label: 'Annual', x: 116, width: 20, align: 'right' as const },
-  { label: 'Daily', x: 136, width: 16, align: 'right' as const },
-  { label: 'Monthly', x: 152, width: 18, align: 'right' as const },
-  { label: 'Annual', x: 170, width: 20, align: 'right' as const },
+  { label: 'Category', x: 14, width: 22, align: 'left' as const },
+  { label: 'Product', x: 36, width: 40, align: 'left' as const },
+  { label: 'Qty', x: 76, width: 12, align: 'right' as const },
+  { label: 'Daily', x: 88, width: 16, align: 'right' as const },
+  { label: 'Monthly', x: 104, width: 18, align: 'right' as const },
+  { label: 'Annual', x: 122, width: 20, align: 'right' as const },
+  { label: 'Daily', x: 142, width: 16, align: 'right' as const },
+  { label: 'Monthly', x: 158, width: 18, align: 'right' as const },
+  { label: 'Annual', x: 176, width: 20, align: 'right' as const },
 ]
 
 // Plain rectangles — jsPDF has no charting library, and a single flat
@@ -731,7 +761,9 @@ export async function generatePlugInEnergyReport(ctx: PlugInEnergyReportContext)
       formatRand(consumption.annualCost),
     ]
 
-    const wrappedCells = cellValues.map((value, i) => doc.splitTextToSize(value, ENERGY_COLUMNS[i].width))
+    const wrappedCells = cellValues.map((value, i) =>
+      doc.splitTextToSize(value, ENERGY_COLUMNS[i].width - COLUMN_PADDING),
+    )
     const noteParts = [`Length ${lengthM.toFixed(2)}m`, item.notes ? `Note: ${item.notes}` : '']
       .filter(Boolean)
       .join('  —  ')
@@ -751,6 +783,7 @@ export async function generatePlugInEnergyReport(ctx: PlugInEnergyReportContext)
       const col = ENERGY_COLUMNS[i]
       doc.text(lines, col.align === 'right' ? col.x + col.width : col.x, y, { align: col.align })
     })
+    drawColumnDividers(doc, ENERGY_COLUMNS, y - LINE_HEIGHT + 1, y + (rowLines - 1) * LINE_HEIGHT + 1)
     y += rowLines * LINE_HEIGHT
 
     if (noteLines.length > 0) {
