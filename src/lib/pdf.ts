@@ -60,8 +60,7 @@ const DIVIDER_COLOR = 210
 // 182mm, spanning the full usable width of A4.
 const QUOTE_COLUMNS = [
   { label: 'CODE', x: 14, width: 20, align: 'left' as const },
-  { label: 'QTY', x: 34, width: 12, align: 'right' as const },
-  { label: 'DESCRIPTION', x: 46, width: 68, align: 'left' as const },
+  { label: 'DESCRIPTION', x: 34, width: 80, align: 'left' as const },
   { label: 'TOTAL FT', x: 114, width: 16, align: 'right' as const },
   { label: 'UNIT PRICE', x: 130, width: 22, align: 'right' as const },
   { label: 'LINE DISCOUNT', x: 152, width: 20, align: 'right' as const },
@@ -380,10 +379,14 @@ export async function generateStoreReport(ctx: ReportContext) {
   }
 
   function drawLineRow(line: QuoteLine) {
+    // No QTY column — a run-based line (doors, reclad, ...) has qty 1 and
+    // already shows its length under TOTAL FT, but a count-based line
+    // (Casem units, plug-in freezer units) has no other column to carry
+    // that count, so fold it into the description instead of losing it.
+    const description = line.qty > 1 ? `${line.qty}x ${line.description}` : line.description
     const cellValues = [
       line.code,
-      line.qty.toString(),
-      line.description,
+      description,
       line.totalFt !== null ? line.totalFt.toString() : '-',
       formatRand(line.unitPrice),
       line.discount > 0 ? formatRand(line.discount) : '',
