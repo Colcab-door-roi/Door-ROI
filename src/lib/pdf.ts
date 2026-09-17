@@ -55,14 +55,13 @@ const COLUMN_PADDING = 1.5
 const DIVIDER_COLOR = 210
 
 // x-position, width (mm) for each column of the Door ROI quote table —
-// matches Colcab's Syspro-generated quote layout (CODE/QTY/FT/DESCRIPTION/
+// matches Colcab's Syspro-generated quote layout (CODE/QTY/DESCRIPTION/
 // TOTAL FT/UNIT PRICE/LINE DISCOUNT/AMOUNT). Cumulative widths sum to
 // 182mm, spanning the full usable width of A4.
 const QUOTE_COLUMNS = [
   { label: 'CODE', x: 14, width: 20, align: 'left' as const },
   { label: 'QTY', x: 34, width: 12, align: 'right' as const },
-  { label: 'FT', x: 46, width: 12, align: 'right' as const },
-  { label: 'DESCRIPTION', x: 58, width: 56, align: 'left' as const },
+  { label: 'DESCRIPTION', x: 46, width: 68, align: 'left' as const },
   { label: 'TOTAL FT', x: 114, width: 16, align: 'right' as const },
   { label: 'UNIT PRICE', x: 130, width: 22, align: 'right' as const },
   { label: 'LINE DISCOUNT', x: 152, width: 20, align: 'right' as const },
@@ -157,7 +156,6 @@ function fitToWidth(img: LoadedImage, width: number) {
 interface QuoteLine {
   code: string
   qty: number
-  ft: number | null
   description: string
   totalFt: number | null
   unitPrice: number
@@ -210,7 +208,7 @@ export async function generateStoreReport(ctx: ReportContext) {
   const footerDims = footerImg ? fitToWidth(footerImg, contentWidth) : null
   const footerReserve = footerDims ? footerDims.h + IMAGE_PADDING * 2 : 12
 
-  const LOGO_W = 40
+  const LOGO_W = 46 // 15% bigger than the report's usual 40mm logo width
   const logoH = headerImg ? LOGO_W / (headerImg.width / headerImg.height) : 0
   // Tighter top margin than the report's usual 14mm — matches how close to
   // the page edge the Syspro quote's own letterhead sits. Left/right stay
@@ -385,7 +383,6 @@ export async function generateStoreReport(ctx: ReportContext) {
     const cellValues = [
       line.code,
       line.qty.toString(),
-      line.ft !== null ? line.ft.toString() : '-',
       line.description,
       line.totalFt !== null ? line.totalFt.toString() : '-',
       formatRand(line.unitPrice),
@@ -444,7 +441,6 @@ export async function generateStoreReport(ctx: ReportContext) {
         itemLines.push({
           code: spinePlugInType.code ?? '',
           qty: plugInResult.requiredSpinePlugInUnits,
-          ft: null,
           description: spinePlugInType.name,
           totalFt: null,
           unitPrice: spinePlugInType.cost_per_unit,
@@ -456,7 +452,6 @@ export async function generateStoreReport(ctx: ReportContext) {
         itemLines.push({
           code: endPlugInType.code ?? '',
           qty: plugInResult.requiredEndPlugInUnits,
-          ft: null,
           description: endPlugInType.name,
           totalFt: null,
           unitPrice: endPlugInType.cost_per_unit,
@@ -468,7 +463,6 @@ export async function generateStoreReport(ctx: ReportContext) {
         itemLines.push({
           code: '',
           qty: 1,
-          ft: null,
           description: 'Back-to-back joint kit',
           totalFt: null,
           unitPrice: plugInResult.jointKitCost,
@@ -479,7 +473,6 @@ export async function generateStoreReport(ctx: ReportContext) {
         itemLines.push({
           code: '',
           qty: 1,
-          ft: null,
           description: 'Centre superstructure',
           totalFt: null,
           unitPrice: plugInResult.centreSuperstructureCost,
@@ -491,7 +484,6 @@ export async function generateStoreReport(ctx: ReportContext) {
         itemLines.push({
           code: '',
           qty: 1,
-          ft: null,
           description: 'Bin freezer transport',
           totalFt: null,
           unitPrice: plugInResult.transportCost,
@@ -509,7 +501,6 @@ export async function generateStoreReport(ctx: ReportContext) {
         itemLines.push({
           code: casemSettings.code ?? '',
           qty: qtyUnits,
-          ft: null,
           description: 'Casem',
           totalFt: null,
           unitPrice,
@@ -539,7 +530,6 @@ export async function generateStoreReport(ctx: ReportContext) {
         itemLines.push({
           code: doorType.code ?? '',
           qty: 1,
-          ft: qtyFt,
           description: 'Doors',
           totalFt: qtyFt,
           unitPrice: amount,
@@ -552,7 +542,6 @@ export async function generateStoreReport(ctx: ReportContext) {
         itemLines.push({
           code: recladRate.code ?? '',
           qty: 1,
-          ft: qtyFt,
           description: 'Reclad',
           totalFt: qtyFt,
           unitPrice: amount,
@@ -565,7 +554,6 @@ export async function generateStoreReport(ctx: ReportContext) {
         itemLines.push({
           code: canopyRate.code ?? '',
           qty: 1,
-          ft: qtyFt,
           description: 'Canopy LED',
           totalFt: qtyFt,
           unitPrice: amount,
@@ -578,7 +566,6 @@ export async function generateStoreReport(ctx: ReportContext) {
         itemLines.push({
           code: undershelfRate.code ?? '',
           qty: 1,
-          ft: qtyFt,
           description: 'Undershelf LED',
           totalFt: qtyFt,
           unitPrice: amount,
@@ -591,7 +578,6 @@ export async function generateStoreReport(ctx: ReportContext) {
         itemLines.push({
           code: settings.vertical_led_code ?? '',
           qty: 1,
-          ft: qtyFt,
           description: 'Vertical LED',
           totalFt: qtyFt,
           unitPrice: amount,
@@ -605,7 +591,6 @@ export async function generateStoreReport(ctx: ReportContext) {
         itemLines.push({
           code: casemSettings.code ?? '',
           qty,
-          ft: null,
           description: 'Casem',
           totalFt: null,
           unitPrice,
@@ -623,7 +608,6 @@ export async function generateStoreReport(ctx: ReportContext) {
         itemLines.push({
           code: settings.subassembly_code ?? '',
           qty: 1,
-          ft: null,
           description: 'Door retrofit transport & labour',
           totalFt: null,
           unitPrice: subassemblyCost,
@@ -637,7 +621,6 @@ export async function generateStoreReport(ctx: ReportContext) {
           itemLines.push({
             code: settings.outlying_code ?? '',
             qty: 1,
-            ft: null,
             description: 'Outlying labour',
             totalFt: null,
             unitPrice: outlyingCost,
