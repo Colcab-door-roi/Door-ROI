@@ -80,6 +80,11 @@ const COLCAB_LETTERHEAD = {
   email: 'info.cpt@colcabct.co.za',
 }
 
+// Same fixed returns/handling-fee note as the Syspro sample — printed on
+// every quote regardless of the admin's own configurable disclaimer text.
+const RETURNS_NOTE =
+  'Please note that a 10% handling fee, as well as the transport costs, will be applicable on all cases returned to factory. Additional costs may be charged for any damages on inspection of returned cases. All returns to factory must be pre-approved by Colcab.'
+
 function sanitizeFilename(name: string) {
   return name.replace(/[\\/:*?"<>|]/g, '-').trim()
 }
@@ -198,8 +203,15 @@ export async function generateStoreReport(ctx: ReportContext) {
 
   const LOGO_W = 40
   const logoH = headerImg ? LOGO_W / (headerImg.width / headerImg.height) : 0
+  // Tighter top margin than the report's usual 14mm — matches how close to
+  // the page edge the Syspro quote's own letterhead sits. Left/right stay
+  // at the normal MARGIN.
+  const TOP_MARGIN = 8
+  // Left edge shared by the letterhead's "Attention:" block and the
+  // page-1 "QUOTATION" info block, so the two align vertically.
+  const RIGHT_BLOCK_X = pageWidth - MARGIN - 60
 
-  let y = MARGIN
+  let y = TOP_MARGIN
 
   function ensureRoom(height: number) {
     if (y + height > pageHeight - footerReserve) {
@@ -212,14 +224,14 @@ export async function generateStoreReport(ctx: ReportContext) {
   // the customer's own contact block (Attention/Tel/Email, captured on the
   // survey profile) — repeats on every page, same as the Syspro original.
   function drawLetterhead() {
-    y = MARGIN
+    y = TOP_MARGIN
     let leftY = y + 3
     let rightY = y + 3
 
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(9)
     doc.text('Colcab (Pty) Ltd', MARGIN, leftY)
-    leftY += 4
+    leftY += 3.8
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(7.5)
     for (const line of [
@@ -228,26 +240,26 @@ export async function generateStoreReport(ctx: ReportContext) {
       ...COLCAB_LETTERHEAD.addressLines,
     ]) {
       doc.text(line, MARGIN, leftY)
-      leftY += 3.5
+      leftY += 3.2
     }
 
     doc.setFontSize(8)
     doc.text('Tel:', pageWidth - MARGIN - 45, rightY)
     doc.text(COLCAB_LETTERHEAD.tel, pageWidth - MARGIN, rightY, { align: 'right' })
-    rightY += 4
+    rightY += 3.5
     doc.text('E-mail:', pageWidth - MARGIN - 45, rightY)
     doc.text(COLCAB_LETTERHEAD.email, pageWidth - MARGIN, rightY, { align: 'right' })
-    rightY += 4
+    rightY += 3.5
 
     if (headerImg) {
       doc.addImage(headerImg.dataUrl, 'JPEG', (pageWidth - LOGO_W) / 2, y, LOGO_W, logoH)
     }
 
-    y = Math.max(leftY, rightY, y + logoH + 3) + 3
+    y = Math.max(leftY, rightY, y + logoH + 2) + 2
     doc.setDrawColor(180)
     doc.line(MARGIN, y, pageWidth - MARGIN, y)
     doc.setDrawColor(0)
-    y += 5
+    y += 4
 
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(10)
@@ -256,15 +268,15 @@ export async function generateStoreReport(ctx: ReportContext) {
 
     doc.setFontSize(8)
     let attnY = y
-    doc.text('Attention:', pageWidth - MARGIN - 60, attnY)
+    doc.text('Attention:', RIGHT_BLOCK_X, attnY)
     doc.text(store.attention_name ?? '', pageWidth - MARGIN, attnY, { align: 'right' })
-    attnY += 4
-    doc.text('Tel No:', pageWidth - MARGIN - 60, attnY)
+    attnY += 3.5
+    doc.text('Tel No:', RIGHT_BLOCK_X, attnY)
     doc.text(store.customer_tel ?? '', pageWidth - MARGIN, attnY, { align: 'right' })
-    attnY += 4
-    doc.text('Email:', pageWidth - MARGIN - 60, attnY)
+    attnY += 3.5
+    doc.text('Email:', RIGHT_BLOCK_X, attnY)
     doc.text(store.customer_email ?? '', pageWidth - MARGIN, attnY, { align: 'right' })
-    attnY += 4
+    attnY += 3.5
 
     y = Math.max(y + 4, attnY) + 3
   }
@@ -273,16 +285,17 @@ export async function generateStoreReport(ctx: ReportContext) {
 
   // Page-1-only: Sales Rep / Customer PO / Store Name / Warranty / Store
   // Location on the left, "QUOTATION" heading + Quotation No / Customer
-  // Code / dates on the right — Quotation No, Customer Code, Warranty and
-  // Expiry date are printed blank (no numbering scheme configured yet).
-  const rightColX = MARGIN + contentWidth / 2 + 4
+  // Code / dates on the right (aligned with the letterhead's "Attention:"
+  // block above it) — Quotation No, Customer Code, Warranty and Expiry
+  // date are printed blank (no numbering scheme configured yet).
+  const rightColX = RIGHT_BLOCK_X
   let leftY = y
   let rightY = y
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(16)
   doc.text('QUOTATION', rightColX, rightY)
-  rightY += 7
+  rightY += 6.5
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
 
@@ -296,7 +309,7 @@ export async function generateStoreReport(ctx: ReportContext) {
   for (const [label, value] of leftInfoRows) {
     doc.text(label, MARGIN, leftY)
     doc.text(value, MARGIN + 55, leftY)
-    leftY += 5
+    leftY += 4.5
   }
 
   const rightInfoRows: [string, string][] = [
@@ -307,16 +320,16 @@ export async function generateStoreReport(ctx: ReportContext) {
   ]
   for (const [label, value] of rightInfoRows) {
     doc.text(label, rightColX, rightY)
-    doc.text(value, rightColX + 35, rightY)
-    rightY += 5
+    doc.text(value, pageWidth - MARGIN, rightY, { align: 'right' })
+    rightY += 4.5
   }
 
-  y = Math.max(leftY, rightY) + 4
+  y = Math.max(leftY, rightY) + 3
   doc.setFont('helvetica', 'italic')
   doc.setFontSize(9)
   doc.text('We thank you for your valued enquiry and have pleasure in quoting the following', MARGIN, y)
   doc.setFont('helvetica', 'normal')
-  y += 8
+  y += 6
 
   function drawTableHeader() {
     ensureRoom(11)
@@ -327,9 +340,9 @@ export async function generateStoreReport(ctx: ReportContext) {
       doc.text(lines, col.align === 'right' ? col.x + col.width : col.x, y, { align: col.align })
     }
     doc.setFont('helvetica', 'normal')
-    y += 5
+    y += 4
     doc.line(MARGIN, y, pageWidth - MARGIN, y)
-    y += 5
+    y += 4
   }
 
   drawTableHeader()
@@ -597,25 +610,36 @@ export async function generateStoreReport(ctx: ReportContext) {
     totalAnnualCost += result.annualCostSaving
   }
 
-  // Store-wide costs (not per-item): always-on subassembly/transport/labour
-  // (plus any plug-in freezer transport, rolled into the same line since
-  // it's the same kind of cost), plus outlying labour if this survey is
-  // flagged outlying. The ft-based portion prices per 4ft section, applied
-  // to the survey's total ft-based footage (GDF doors aren't measured in
-  // feet, so they don't contribute to this total).
-  const subassemblyCost =
-    (totalFt / 4) * settings.subassembly_transport_labour_cost_4ft + totalPlugInTransportCost
+  // Store-wide costs (not per-item), each its own line under TRANSPORT &
+  // LINE-UP — door retrofit transport/labour and plug-in ("bin") freezer
+  // transport are priced differently (per 4ft section vs per running
+  // metre) and shown separately, same as the Syspro sample. Plus outlying
+  // labour if this survey is flagged outlying.
+  const subassemblyCost = (totalFt / 4) * settings.subassembly_transport_labour_cost_4ft
   if (subassemblyCost > 0) {
     transportLines.push({
       category: 'TRANSPORT & LINE-UP',
       code: settings.subassembly_code ?? '',
       qty: 1,
       ft: null,
-      description: 'Subassembly, transport & labour',
+      description: 'Door retrofit transport & labour',
       totalFt: null,
       unitPrice: subassemblyCost,
       discount: 0,
       amount: subassemblyCost,
+    })
+  }
+  if (totalPlugInTransportCost > 0) {
+    transportLines.push({
+      category: 'TRANSPORT & LINE-UP',
+      code: '',
+      qty: 1,
+      ft: null,
+      description: 'Bin freezer transport',
+      totalFt: null,
+      unitPrice: totalPlugInTransportCost,
+      discount: 0,
+      amount: totalPlugInTransportCost,
     })
   }
   const outlyingCost = store.outlying ? (totalFt / 4) * settings.outlying_labour_cost_4ft : 0
@@ -665,7 +689,7 @@ export async function generateStoreReport(ctx: ReportContext) {
   ensureRoom(70)
   y += 2
   doc.line(MARGIN, y, pageWidth - MARGIN, y)
-  y += 8
+  y += 6
 
   const bottomStartY = y
   const leftColX = MARGIN
@@ -690,11 +714,11 @@ export async function generateStoreReport(ctx: ReportContext) {
     doc.setFont('helvetica', row.bold ? 'bold' : 'normal')
     doc.text(row.label, bottomRightX, rightY)
     doc.text(row.value, bottomRightX + bottomRightWidth, rightY, { align: 'right' })
-    rightY += 5.5
+    rightY += 5
   }
   doc.setFont('helvetica', 'normal')
 
-  rightY += 5
+  rightY += 4
   const paybackYears = calculatePaybackYears(totalBeforeTax, totalAnnualCost, settings.annual_price_increase_percent)
   const escalationNote =
     paybackYears !== null && settings.annual_price_increase_percent > 0
@@ -703,13 +727,13 @@ export async function generateStoreReport(ctx: ReportContext) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(10)
   doc.text('ROI summary', bottomRightX, rightY)
-  rightY += 5.5
+  rightY += 5
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
   doc.text(`Total annual energy saved: ${formatKwh(totalAnnualKwh)}`, bottomRightX, rightY)
-  rightY += 5
+  rightY += 4.5
   doc.text(`Total annual cost saved: ${formatRand(totalAnnualCost)}`, bottomRightX, rightY)
-  rightY += 5
+  rightY += 4.5
   if (paybackYears !== null) {
     const paybackLines = doc.splitTextToSize(
       `Estimated payback period: ${paybackYears.toFixed(1)} years (excl. VAT)${escalationNote}`,
@@ -723,17 +747,18 @@ export async function generateStoreReport(ctx: ReportContext) {
   leftY = bottomStartY
   doc.setFontSize(9)
   doc.text('Acceptance of Quotation:', leftColX, leftY)
-  leftY += 14
+  leftY += 12
   doc.line(leftColX, leftY, leftColX + leftColWidth, leftY)
-  leftY += 4
+  leftY += 3.5
   doc.setFontSize(8)
   doc.text('Signature', leftColX, leftY)
-  leftY += 7
+  leftY += 6
 
+  // The returns/handling-fee note from the Syspro sample, always shown,
+  // followed by the admin's own configurable disclaimer.
   doc.setFontSize(8)
-  const disclaimerLines = settings.legal_disclaimer
-    ? doc.splitTextToSize(settings.legal_disclaimer, leftColWidth - 6)
-    : []
+  const disclaimerText = [RETURNS_NOTE, settings.legal_disclaimer].filter(Boolean).join('\n\n')
+  const disclaimerLines = disclaimerText ? doc.splitTextToSize(disclaimerText, leftColWidth - 6) : []
   if (disclaimerLines.length) {
     const boxHeight = disclaimerLines.length * LINE_HEIGHT + 6
     doc.setFillColor(235, 235, 235)
