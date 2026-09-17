@@ -1031,7 +1031,7 @@ function ItemCapture({
       end_remote_qty: null,
       end_plugin_freezer_type_id: null,
       notes: form.notes || null,
-      discount_percent: Number(form.discount) || 0,
+      discount_percent: Math.min(6, Number(form.discount) || 0),
     }
 
     const payload = form.isPluginFreezer
@@ -1578,12 +1578,17 @@ function ItemCapture({
             type="text"
             inputMode="decimal"
             value={form.discount}
-            onChange={(e) => setForm({ ...form, discount: e.target.value.replace(',', '.') })}
+            onChange={(e) => {
+              const raw = e.target.value.replace(',', '.')
+              const num = Number(raw)
+              const clamped = raw !== '' && !Number.isNaN(num) && num > 6 ? '6' : raw
+              setForm({ ...form, discount: clamped })
+            }}
             placeholder="0"
             className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
           />
           <span className="text-xs text-slate-400">
-            e.g. 5 knocks 5% off this line's amount on the quote.
+            e.g. 5 knocks 5% off this line's amount on the quote. Max 6%.
           </span>
         </label>
 
