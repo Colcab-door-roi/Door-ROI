@@ -160,7 +160,7 @@ export interface StoreItem {
   end_remote_qty: number | null
   end_plugin_freezer_type_id: string | null
   notes: string | null
-  discount_amount: number
+  discount_percent: number
 }
 
 export interface CalculationResult {

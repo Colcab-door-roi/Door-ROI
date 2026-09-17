@@ -985,7 +985,7 @@ function ItemCapture({
       endRemoteQty: item.end_remote_qty?.toString() ?? '',
       endPlugInFreezerTypeId: item.end_plugin_freezer_type_id ?? '',
       notes: item.notes ?? '',
-      discount: item.discount_amount ? item.discount_amount.toString() : '',
+      discount: item.discount_percent ? item.discount_percent.toString() : '',
     })
   }
 
@@ -1031,7 +1031,7 @@ function ItemCapture({
       end_remote_qty: null,
       end_plugin_freezer_type_id: null,
       notes: form.notes || null,
-      discount_amount: Number(form.discount) || 0,
+      discount_percent: Number(form.discount) || 0,
     }
 
     const payload = form.isPluginFreezer
@@ -1565,7 +1565,7 @@ function ItemCapture({
         )}
 
         <label className="flex flex-col gap-1">
-          <span className="text-sm text-slate-600 dark:text-slate-400">Line discount (R)</span>
+          <span className="text-sm text-slate-600 dark:text-slate-400">Line discount (%)</span>
           <input
             type="text"
             inputMode="decimal"
@@ -1575,7 +1575,7 @@ function ItemCapture({
             className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
           />
           <span className="text-xs text-slate-400">
-            Knocked off this line's amount on the quote.
+            e.g. 5 knocks 5% off this line's amount on the quote.
           </span>
         </label>
 
@@ -1689,9 +1689,9 @@ function ItemCapture({
                     </>
                   )}
                 </div>
-                {item.discount_amount > 0 && (
+                {item.discount_percent > 0 && (
                   <div className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
-                    Discount: R{item.discount_amount}
+                    Discount: {item.discount_percent}%
                   </div>
                 )}
                 {item.notes && (

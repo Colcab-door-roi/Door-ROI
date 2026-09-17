@@ -347,7 +347,11 @@ export async function generateStoreReport(ctx: ReportContext) {
 
   drawTableHeader()
 
-  function drawCategoryBar(label: string) {
+  // `amount`, when given, prints right-aligned in the bar itself — same as
+  // the Syspro sample's TRANSPORT & LINE-UP bar, which carries the
+  // section's own total lined up with the Amount column/Totals box below
+  // it. The plain cost-component bars (DOORS, RECLAD, ...) don't get one.
+  function drawCategoryBar(label: string, amount?: number) {
     const barHeight = 6
     ensureRoom(barHeight + 2)
     doc.setFillColor(90, 90, 90)
@@ -356,6 +360,9 @@ export async function generateStoreReport(ctx: ReportContext) {
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(8)
     doc.text(label, MARGIN + 2, y)
+    if (amount !== undefined) {
+      doc.text(formatRand(amount), pageWidth - MARGIN - 2, y, { align: 'right' })
+    }
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0)
     y += barHeight + 1
@@ -596,13 +603,15 @@ export async function generateStoreReport(ctx: ReportContext) {
       }
     }
 
-    // A store item carries a single discount, but can produce several
-    // quote lines — the whole discount lands on the first line generated
-    // for it, keeping the total reduction correct without inventing a
+    // A store item carries a single discount percentage, but can produce
+    // several quote lines — the whole discount lands on the first line
+    // generated for it (as a Rand amount off that line's own value),
+    // keeping the total reduction correct without inventing a
     // per-component split the rep never specified.
-    if (itemLines.length > 0 && item.discount_amount > 0) {
-      itemLines[0].discount = item.discount_amount
-      itemLines[0].amount = Math.max(0, itemLines[0].amount - item.discount_amount)
+    if (itemLines.length > 0 && item.discount_percent > 0) {
+      const discountRand = itemLines[0].amount * (item.discount_percent / 100)
+      itemLines[0].discount = discountRand
+      itemLines[0].amount = Math.max(0, itemLines[0].amount - discountRand)
     }
 
     quoteLines.push(...itemLines)
@@ -678,7 +687,8 @@ export async function generateStoreReport(ctx: ReportContext) {
   }
   if (transportLines.length > 0) {
     categoryNum += 1
-    drawCategoryBar(`${String(categoryNum).padStart(2, '0')} - TRANSPORT & LINE-UP`)
+    const transportTotal = transportLines.reduce((sum, l) => sum + l.amount, 0)
+    drawCategoryBar(`${String(categoryNum).padStart(2, '0')} - TRANSPORT & LINE-UP`, transportTotal)
     for (const line of transportLines) drawLineRow(line)
   }
 
