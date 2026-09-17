@@ -153,9 +153,8 @@ function fitToWidth(img: LoadedImage, width: number) {
 // A single priced row on the Syspro-style quote table — one per cost
 // component (a case's doors, its reclad, its Casem, ...) rather than one
 // per captured survey item, so a case with doors+reclad+canopy becomes
-// three lines, each under its own category bar.
+// three lines, all grouped under that one case's own category bar.
 interface QuoteLine {
-  category: string
   code: string
   qty: number
   ft: number | null
@@ -164,6 +163,16 @@ interface QuoteLine {
   unitPrice: number
   discount: number
   amount: number
+}
+
+// One grey bar per captured case/line-up — its label is that item's own
+// Category (and Case Type, in brackets), its Notes wrap underneath within
+// the same bar, and every cost line it produced (including its own share
+// of transport/labour) lists below it.
+interface QuoteLineGroup {
+  label: string
+  notes: string | null
+  lines: QuoteLine[]
 }
 
 export async function generateStoreReport(ctx: ReportContext) {
@@ -347,12 +356,13 @@ export async function generateStoreReport(ctx: ReportContext) {
 
   drawTableHeader()
 
-  // `amount`, when given, prints right-aligned in the bar itself — same as
-  // the Syspro sample's TRANSPORT & LINE-UP bar, which carries the
-  // section's own total lined up with the Amount column/Totals box below
-  // it. The plain cost-component bars (DOORS, RECLAD, ...) don't get one.
-  function drawCategoryBar(label: string, amount?: number) {
-    const barHeight = 6
+  // One bar per captured case/line-up: its Category (Case Type) label,
+  // plus its own Notes wrapping underneath within the same bar — the bar
+  // grows to fit however long the note runs.
+  function drawCategoryBar(label: string, notes: string | null) {
+    doc.setFontSize(7.5)
+    const noteLines = notes ? doc.splitTextToSize(notes, contentWidth - 4) : []
+    const barHeight = noteLines.length > 0 ? 6 + noteLines.length * 3.3 + 1 : 6
     ensureRoom(barHeight + 2)
     doc.setFillColor(90, 90, 90)
     doc.rect(MARGIN, y - 4, contentWidth, barHeight, 'F')
@@ -360,8 +370,11 @@ export async function generateStoreReport(ctx: ReportContext) {
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(8)
     doc.text(label, MARGIN + 2, y)
-    if (amount !== undefined) {
-      doc.text(formatRand(amount), pageWidth - MARGIN - 2, y, { align: 'right' })
+    if (noteLines.length > 0) {
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(7.5)
+      doc.text(noteLines, MARGIN + 2, y + 4)
+      doc.setFontSize(8)
     }
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0)
@@ -396,14 +409,12 @@ export async function generateStoreReport(ctx: ReportContext) {
 
   let totalAnnualKwh = 0
   let totalAnnualCost = 0
-  let totalFt = 0
-  let totalPlugInTransportCost = 0
-  const quoteLines: QuoteLine[] = []
-  const transportLines: QuoteLine[] = []
+  const groups: QuoteLineGroup[] = []
 
   for (const item of items) {
     const category = categories.find((c) => c.id === item.category_id)
     let result = ZERO_RESULT
+    let groupLabel = category?.name ?? ''
     const itemLines: QuoteLine[] = []
 
     if (item.is_plugin_freezer) {
@@ -427,11 +438,10 @@ export async function generateStoreReport(ctx: ReportContext) {
         plugInFreezerSettings,
       )
       result = plugInResult
-      totalPlugInTransportCost += plugInResult.transportCost
+      groupLabel = category?.name ? `${category.name} (Plug-in Freezer)` : 'Plug-in Freezer'
 
       if (plugInResult.requiredSpinePlugInUnits > 0 && spinePlugInType) {
         itemLines.push({
-          category: 'PLUG-IN FREEZER',
           code: spinePlugInType.code ?? '',
           qty: plugInResult.requiredSpinePlugInUnits,
           ft: null,
@@ -444,7 +454,6 @@ export async function generateStoreReport(ctx: ReportContext) {
       }
       if (plugInResult.requiredEndPlugInUnits > 0 && endPlugInType) {
         itemLines.push({
-          category: 'PLUG-IN FREEZER',
           code: endPlugInType.code ?? '',
           qty: plugInResult.requiredEndPlugInUnits,
           ft: null,
@@ -456,8 +465,7 @@ export async function generateStoreReport(ctx: ReportContext) {
         })
       }
       if (item.spine_connection_method === 'joint_kit' && plugInResult.jointKitCost > 0) {
-        transportLines.push({
-          category: 'TRANSPORT & LINE-UP',
+        itemLines.push({
           code: '',
           qty: 1,
           ft: null,
@@ -468,8 +476,7 @@ export async function generateStoreReport(ctx: ReportContext) {
           amount: plugInResult.jointKitCost,
         })
       } else if (item.spine_connection_method === 'superstructure' && plugInResult.centreSuperstructureCost > 0) {
-        transportLines.push({
-          category: 'TRANSPORT & LINE-UP',
+        itemLines.push({
           code: '',
           qty: 1,
           ft: null,
@@ -480,18 +487,30 @@ export async function generateStoreReport(ctx: ReportContext) {
           amount: plugInResult.centreSuperstructureCost,
         })
       }
+      if (plugInResult.transportCost > 0) {
+        itemLines.push({
+          code: '',
+          qty: 1,
+          ft: null,
+          description: 'Bin freezer transport',
+          totalFt: null,
+          unitPrice: plugInResult.transportCost,
+          discount: 0,
+          amount: plugInResult.transportCost,
+        })
+      }
     } else if (item.is_gdf) {
       const qtyDoors = item.qty_doors ?? 0
       const qtyUnits = item.qty_gdf_units ?? 0
       result = calculateGdfCasemSavings(qtyDoors, casemSettings, item.casem, store.electricity_rate)
+      groupLabel = category?.name ? `${category.name} (GDF)` : 'GDF'
       if (item.casem && qtyUnits > 0) {
         const unitPrice = casemSettings.cost_per_unit + casemSettings.installation_cost_per_unit
         itemLines.push({
-          category: 'CASEM',
           code: casemSettings.code ?? '',
           qty: qtyUnits,
           ft: null,
-          description: category?.name ?? 'GDF',
+          description: 'Casem',
           totalFt: null,
           unitPrice,
           discount: 0,
@@ -513,17 +532,15 @@ export async function generateStoreReport(ctx: ReportContext) {
             store.casem ? casemSettings.heater_door_savings_percent : 0,
           )
         : ZERO_RESULT
-      totalFt += qtyFt
-      const description = category?.name ? `${category.name} — ${caseType.name}` : caseType.name
+      groupLabel = category?.name ? `${category.name} (${caseType.name})` : caseType.name
 
       if (item.doors) {
         const amount = resolveCost(doorType, qtyFt)
         itemLines.push({
-          category: 'DOORS',
           code: doorType.code ?? '',
           qty: 1,
           ft: qtyFt,
-          description,
+          description: 'Doors',
           totalFt: qtyFt,
           unitPrice: amount,
           discount: 0,
@@ -533,11 +550,10 @@ export async function generateStoreReport(ctx: ReportContext) {
       if (item.reclad && recladRate) {
         const amount = resolveCost(recladRate, qtyFt)
         itemLines.push({
-          category: 'RECLAD',
           code: recladRate.code ?? '',
           qty: 1,
           ft: qtyFt,
-          description,
+          description: 'Reclad',
           totalFt: qtyFt,
           unitPrice: amount,
           discount: 0,
@@ -547,11 +563,10 @@ export async function generateStoreReport(ctx: ReportContext) {
       if (item.canopy_led && canopyRate) {
         const amount = resolveCost(canopyRate, qtyFt)
         itemLines.push({
-          category: 'CANOPY LED',
           code: canopyRate.code ?? '',
           qty: 1,
           ft: qtyFt,
-          description,
+          description: 'Canopy LED',
           totalFt: qtyFt,
           unitPrice: amount,
           discount: 0,
@@ -561,11 +576,10 @@ export async function generateStoreReport(ctx: ReportContext) {
       if (item.undershelf_led && undershelfRate) {
         const amount = resolveCost(undershelfRate, qtyFt)
         itemLines.push({
-          category: 'UNDERSHELF LED',
           code: undershelfRate.code ?? '',
           qty: 1,
           ft: qtyFt,
-          description,
+          description: 'Undershelf LED',
           totalFt: qtyFt,
           unitPrice: amount,
           discount: 0,
@@ -575,11 +589,10 @@ export async function generateStoreReport(ctx: ReportContext) {
       if (item.vertical_led) {
         const amount = (qtyFt / 4) * settings.vertical_led_cost_4ft
         itemLines.push({
-          category: 'VERTICAL LED',
           code: settings.vertical_led_code ?? '',
           qty: 1,
           ft: qtyFt,
-          description,
+          description: 'Vertical LED',
           totalFt: qtyFt,
           unitPrice: amount,
           discount: 0,
@@ -590,16 +603,48 @@ export async function generateStoreReport(ctx: ReportContext) {
         const qty = item.casem_units ?? 0
         const unitPrice = casemSettings.cost_per_unit + casemSettings.installation_cost_per_unit
         itemLines.push({
-          category: 'CASEM',
           code: casemSettings.code ?? '',
           qty,
           ft: null,
-          description,
+          description: 'Casem',
           totalFt: null,
           unitPrice,
           discount: 0,
           amount: qty * unitPrice,
         })
+      }
+
+      // This case's own share of transport/labour — priced off its own
+      // footage, same rate as before, just attributed to this case's bar
+      // instead of one survey-wide line. Mathematically identical to the
+      // old lump sum, since (sum of ft) ÷ 4 × rate = sum of (ft ÷ 4 × rate).
+      const subassemblyCost = (qtyFt / 4) * settings.subassembly_transport_labour_cost_4ft
+      if (subassemblyCost > 0) {
+        itemLines.push({
+          code: settings.subassembly_code ?? '',
+          qty: 1,
+          ft: null,
+          description: 'Door retrofit transport & labour',
+          totalFt: null,
+          unitPrice: subassemblyCost,
+          discount: 0,
+          amount: subassemblyCost,
+        })
+      }
+      if (store.outlying) {
+        const outlyingCost = (qtyFt / 4) * settings.outlying_labour_cost_4ft
+        if (outlyingCost > 0) {
+          itemLines.push({
+            code: settings.outlying_code ?? '',
+            qty: 1,
+            ft: null,
+            description: 'Outlying labour',
+            totalFt: null,
+            unitPrice: outlyingCost,
+            discount: 0,
+            amount: outlyingCost,
+          })
+        }
       }
     }
 
@@ -614,85 +659,24 @@ export async function generateStoreReport(ctx: ReportContext) {
       itemLines[0].amount = Math.max(0, itemLines[0].amount - discountRand)
     }
 
-    quoteLines.push(...itemLines)
+    if (itemLines.length > 0) {
+      groups.push({ label: groupLabel, notes: item.notes, lines: itemLines })
+    }
     totalAnnualKwh += result.annualSavingsKwh
     totalAnnualCost += result.annualCostSaving
   }
 
-  // Store-wide costs (not per-item), each its own line under TRANSPORT &
-  // LINE-UP — door retrofit transport/labour and plug-in ("bin") freezer
-  // transport are priced differently (per 4ft section vs per running
-  // metre) and shown separately, same as the Syspro sample. Plus outlying
-  // labour if this survey is flagged outlying.
-  const subassemblyCost = (totalFt / 4) * settings.subassembly_transport_labour_cost_4ft
-  if (subassemblyCost > 0) {
-    transportLines.push({
-      category: 'TRANSPORT & LINE-UP',
-      code: settings.subassembly_code ?? '',
-      qty: 1,
-      ft: null,
-      description: 'Door retrofit transport & labour',
-      totalFt: null,
-      unitPrice: subassemblyCost,
-      discount: 0,
-      amount: subassemblyCost,
-    })
-  }
-  if (totalPlugInTransportCost > 0) {
-    transportLines.push({
-      category: 'TRANSPORT & LINE-UP',
-      code: '',
-      qty: 1,
-      ft: null,
-      description: 'Bin freezer transport',
-      totalFt: null,
-      unitPrice: totalPlugInTransportCost,
-      discount: 0,
-      amount: totalPlugInTransportCost,
-    })
-  }
-  const outlyingCost = store.outlying ? (totalFt / 4) * settings.outlying_labour_cost_4ft : 0
-  if (outlyingCost > 0) {
-    transportLines.push({
-      category: 'TRANSPORT & LINE-UP',
-      code: settings.outlying_code ?? '',
-      qty: 1,
-      ft: null,
-      description: 'Outlying labour',
-      totalFt: null,
-      unitPrice: outlyingCost,
-      discount: 0,
-      amount: outlyingCost,
-    })
+  let groupNum = 0
+  for (const group of groups) {
+    groupNum += 1
+    drawCategoryBar(`${String(groupNum).padStart(2, '0')} - ${group.label}`, group.notes)
+    for (const line of group.lines) drawLineRow(line)
   }
 
-  // Group lines by category, numbered in the order each category first
-  // appears — "TRANSPORT & LINE-UP" always renders last, same as the
-  // Syspro sample, regardless of when its costs were computed.
-  const categoryOrder: string[] = []
-  const linesByCategory = new Map<string, QuoteLine[]>()
-  for (const line of quoteLines) {
-    if (!linesByCategory.has(line.category)) {
-      categoryOrder.push(line.category)
-      linesByCategory.set(line.category, [])
-    }
-    linesByCategory.get(line.category)!.push(line)
-  }
-
-  let categoryNum = 0
-  for (const category of categoryOrder) {
-    categoryNum += 1
-    drawCategoryBar(`${String(categoryNum).padStart(2, '0')} - ${category}`)
-    for (const line of linesByCategory.get(category)!) drawLineRow(line)
-  }
-  if (transportLines.length > 0) {
-    categoryNum += 1
-    const transportTotal = transportLines.reduce((sum, l) => sum + l.amount, 0)
-    drawCategoryBar(`${String(categoryNum).padStart(2, '0')} - TRANSPORT & LINE-UP`, transportTotal)
-    for (const line of transportLines) drawLineRow(line)
-  }
-
-  const totalBeforeTax = [...quoteLines, ...transportLines].reduce((sum, l) => sum + l.amount, 0)
+  const totalBeforeTax = groups.reduce(
+    (sum, g) => sum + g.lines.reduce((s, l) => s + l.amount, 0),
+    0,
+  )
   const vatAmount = totalBeforeTax * (settings.vat_percent / 100)
   const totalInclVat = totalBeforeTax + vatAmount
 
