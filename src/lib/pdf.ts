@@ -781,7 +781,7 @@ export async function generateStoreReport(ctx: ReportContext) {
     }
   }
 
-  return doc
+  return { doc, totalBeforeTax }
 }
 
 // The static Ts&Cs / payment / banking / POPI text and credit-application

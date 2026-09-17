@@ -1105,7 +1105,7 @@ function ItemCapture({
       // view, so browsing/login stays fast for reps who never generate a
       // report in a given session.
       const { generateStoreReport, reportFilename } = await import('../lib/pdf')
-      const doc = await generateStoreReport({
+      const { doc, totalBeforeTax } = await generateStoreReport({
         store,
         items,
         caseTypes,
@@ -1136,6 +1136,14 @@ function ItemCapture({
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
+
+      // Log this quote for the admin weekly-quotes report. One row per
+      // store survey — regenerating (e.g. after editing an item) just
+      // refreshes the value and timestamp rather than adding a duplicate.
+      await supabase
+        .from('store_visits')
+        .update({ quote_value: totalBeforeTax, quote_generated_at: new Date().toISOString() })
+        .eq('id', store.id)
     } finally {
       setGenerating(false)
     }

@@ -133,6 +133,8 @@ export interface StoreVisit {
   customer_tel: string | null
   customer_email: string | null
   store_location: string | null
+  quote_value: number | null
+  quote_generated_at: string | null
 }
 
 export interface StoreItem {

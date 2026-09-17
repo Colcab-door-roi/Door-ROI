@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { logActivity } from '../lib/activityLog'
+import { formatRand } from '../lib/format'
 import type {
   AppSettings,
   CasemSettings,
@@ -27,7 +28,7 @@ export default function Admin() {
   )
   const [passcodeInput, setPasscodeInput] = useState('')
   const [passcodeError, setPasscodeError] = useState('')
-  const [tab, setTab] = useState<'data' | 'reps'>('data')
+  const [tab, setTab] = useState<'data' | 'reps' | 'quotes'>('data')
   const [dataTab, setDataTab] = useState<'case' | 'gdf' | 'plugin'>('case')
 
   if (!unlocked) {
@@ -107,9 +108,21 @@ export default function Admin() {
         >
           Sales Reps
         </button>
+        <button
+          onClick={() => setTab('quotes')}
+          className={`px-4 py-2 text-sm font-medium ${
+            tab === 'quotes'
+              ? 'border-b-2 border-slate-900 text-slate-900 dark:border-slate-100 dark:text-slate-100'
+              : 'text-slate-500'
+          }`}
+        >
+          Quotes
+        </button>
       </div>
 
-      {tab === 'data' ? (
+      {tab === 'quotes' ? (
+        <QuotesSection />
+      ) : tab === 'data' ? (
         <>
           <div className="flex gap-2 border-b border-slate-200 dark:border-slate-800">
             {(
@@ -1763,6 +1776,142 @@ function PlugInFreezerSection() {
       <RemoteFreezerTypesSection />
       <PlugInFreezerTypesSection />
     </>
+  )
+}
+
+// --- Quotes report ---
+
+// The sales week runs Friday 13:00 to the following Friday 13:00, not a
+// calendar week — matches how the reps' week is actually structured.
+function mostRecentFriday1pm(from: Date): Date {
+  const d = new Date(from)
+  d.setHours(13, 0, 0, 0)
+  const daysSinceFriday = (d.getDay() - 5 + 7) % 7
+  d.setDate(d.getDate() - daysSinceFriday)
+  if (d.getTime() > from.getTime()) d.setDate(d.getDate() - 7)
+  return d
+}
+
+function getWeekRange(weekOffset: number) {
+  const start = mostRecentFriday1pm(new Date())
+  start.setDate(start.getDate() + weekOffset * 7)
+  const end = new Date(start)
+  end.setDate(end.getDate() + 7)
+  return { start, end }
+}
+
+function formatWeekBoundary(d: Date): string {
+  return d.toLocaleString('en-ZA', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+function QuotesSection() {
+  const [weekOffset, setWeekOffset] = useState(0)
+  const [quotes, setQuotes] = useState<StoreVisit[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const { start, end } = getWeekRange(weekOffset)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      setLoading(true)
+      const { data, error } = await supabase
+        .from('store_visits')
+        .select('*')
+        .not('quote_generated_at', 'is', null)
+        .gte('quote_generated_at', start.toISOString())
+        .lt('quote_generated_at', end.toISOString())
+        .order('quote_generated_at', { ascending: false })
+      if (cancelled) return
+      if (error) setError(error.message)
+      else setQuotes(data ?? [])
+      setLoading(false)
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [weekOffset])
+
+  const total = quotes.reduce((sum, q) => sum + (q.quote_value ?? 0), 0)
+
+  return (
+    <Card title="Quotes this week">
+      <ErrorBox error={error} />
+      <div className="flex items-center justify-between gap-2">
+        <button
+          onClick={() => setWeekOffset((w) => w - 1)}
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-900"
+        >
+          ← Previous week
+        </button>
+        <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+          {formatWeekBoundary(start)} – {formatWeekBoundary(end)}
+        </p>
+        <button
+          onClick={() => setWeekOffset((w) => w + 1)}
+          disabled={weekOffset >= 0}
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-transparent dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-900"
+        >
+          Next week →
+        </button>
+      </div>
+
+      {loading ? (
+        <p className="text-sm text-slate-400">Loading…</p>
+      ) : quotes.length === 0 ? (
+        <p className="text-sm text-slate-400">No quotes generated this week.</p>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50 text-left text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+                <th className="p-3 font-medium">Sales rep</th>
+                <th className="p-3 font-medium">Store</th>
+                <th className="p-3 font-medium">Date of quote</th>
+                <th className="p-3 text-right font-medium">Value (excl. VAT)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {quotes.map((q) => (
+                <tr key={q.id} className="border-b border-slate-100 last:border-0 dark:border-slate-900">
+                  <td className="p-3 text-slate-800 dark:text-slate-200">{q.sales_rep_name ?? '—'}</td>
+                  <td className="p-3 text-slate-800 dark:text-slate-200">{q.store_name}</td>
+                  <td className="p-3 text-slate-800 dark:text-slate-200">
+                    {q.quote_generated_at
+                      ? new Date(q.quote_generated_at).toLocaleString('en-ZA', {
+                          day: 'numeric',
+                          month: 'short',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })
+                      : '—'}
+                  </td>
+                  <td className="p-3 text-right text-slate-800 dark:text-slate-200">
+                    {formatRand(q.quote_value ?? 0)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="bg-slate-50 font-medium text-slate-900 dark:bg-slate-900 dark:text-slate-100">
+                <td className="p-3" colSpan={3}>
+                  Total ({quotes.length} quote{quotes.length === 1 ? '' : 's'})
+                </td>
+                <td className="p-3 text-right">{formatRand(total)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </Card>
   )
 }
 
