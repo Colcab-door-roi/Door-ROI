@@ -212,7 +212,9 @@ function SettingsSection() {
   const [rate, setRate] = useState('')
   const [priceIncrease, setPriceIncrease] = useState('')
   const [subassemblyCost, setSubassemblyCost] = useState('')
+  const [subassemblyCode, setSubassemblyCode] = useState('')
   const [outlyingCost, setOutlyingCost] = useState('')
+  const [outlyingCode, setOutlyingCode] = useState('')
   const [vatPercent, setVatPercent] = useState('')
   const [disclaimer, setDisclaimer] = useState('')
   const [loading, setLoading] = useState(true)
@@ -229,7 +231,9 @@ function SettingsSection() {
       setRate(data.default_electricity_rate.toString())
       setPriceIncrease(data.annual_price_increase_percent.toString())
       setSubassemblyCost(data.subassembly_transport_labour_cost_4ft.toString())
+      setSubassemblyCode(data.subassembly_code ?? '')
       setOutlyingCost(data.outlying_labour_cost_4ft.toString())
+      setOutlyingCode(data.outlying_code ?? '')
       setVatPercent(data.vat_percent.toString())
       setDisclaimer(data.legal_disclaimer ?? '')
     }
@@ -251,7 +255,9 @@ function SettingsSection() {
         default_electricity_rate: Number(rate) || 0,
         annual_price_increase_percent: Number(priceIncrease) || 0,
         subassembly_transport_labour_cost_4ft: Number(subassemblyCost) || 0,
+        subassembly_code: subassemblyCode || null,
         outlying_labour_cost_4ft: Number(outlyingCost) || 0,
+        outlying_code: outlyingCode || null,
         vat_percent: Number(vatPercent) || 0,
         legal_disclaimer: disclaimer,
       })
@@ -311,18 +317,28 @@ function SettingsSection() {
           onChange={setPriceIncrease}
           type="number"
         />
-        <Field
-          label="Subassembly, transport & labour cost (R per 4ft)"
-          value={subassemblyCost}
-          onChange={setSubassemblyCost}
-          type="number"
-        />
-        <Field
-          label="Outlying labour cost (R per 4ft)"
-          value={outlyingCost}
-          onChange={setOutlyingCost}
-          type="number"
-        />
+        <div className="grid grid-cols-2 gap-3">
+          <Field
+            label="Subassembly, transport & labour cost (R per 4ft)"
+            value={subassemblyCost}
+            onChange={setSubassemblyCost}
+            type="number"
+          />
+          <Field
+            label="Subassembly code (for quotes)"
+            value={subassemblyCode}
+            onChange={setSubassemblyCode}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field
+            label="Outlying labour cost (R per 4ft)"
+            value={outlyingCost}
+            onChange={setOutlyingCost}
+            type="number"
+          />
+          <Field label="Outlying code (for quotes)" value={outlyingCode} onChange={setOutlyingCode} />
+        </div>
         <p className="text-xs text-slate-400">
           Both apply to the survey's total footage across all cases (total ft ÷ 4 × cost) —
           subassembly/transport/labour always applies; outlying labour only when the survey is
@@ -388,12 +404,15 @@ function SettingsSection() {
 
 function CostRatesSection() {
   const [rates, setRates] = useState<CostRate[]>([])
-  const [drafts, setDrafts] = useState<Record<string, { cost_4ft: string; cost_5ft: string; cost_7ft: string }>>({})
+  const [drafts, setDrafts] = useState<
+    Record<string, { cost_4ft: string; cost_5ft: string; cost_7ft: string; code: string }>
+  >({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [savingType, setSavingType] = useState<string | null>(null)
 
   const [verticalLedCost, setVerticalLedCost] = useState('')
+  const [verticalLedCode, setVerticalLedCode] = useState('')
   const [verticalLedSaving, setVerticalLedSaving] = useState(false)
   const [verticalLedSaved, setVerticalLedSaved] = useState(false)
 
@@ -401,7 +420,7 @@ function CostRatesSection() {
     setLoading(true)
     const [ratesRes, settingsRes] = await Promise.all([
       supabase.from('cost_rates').select('*').order('cost_type'),
-      supabase.from('app_settings').select('vertical_led_cost_4ft').single(),
+      supabase.from('app_settings').select('vertical_led_cost_4ft, vertical_led_code').single(),
     ])
     if (ratesRes.error) setError(ratesRes.error.message)
     else if (ratesRes.data) {
@@ -412,11 +431,15 @@ function CostRatesSection() {
           cost_4ft: r.cost_4ft.toString(),
           cost_5ft: r.cost_5ft.toString(),
           cost_7ft: r.cost_7ft.toString(),
+          code: r.code ?? '',
         }
       }
       setDrafts(d)
     }
-    if (settingsRes.data) setVerticalLedCost(settingsRes.data.vertical_led_cost_4ft.toString())
+    if (settingsRes.data) {
+      setVerticalLedCost(settingsRes.data.vertical_led_cost_4ft.toString())
+      setVerticalLedCode(settingsRes.data.vertical_led_code ?? '')
+    }
     setLoading(false)
   }
 
@@ -434,6 +457,7 @@ function CostRatesSection() {
         cost_4ft: Number(d.cost_4ft) || 0,
         cost_5ft: Number(d.cost_5ft) || 0,
         cost_7ft: Number(d.cost_7ft) || 0,
+        code: d.code || null,
       })
       .eq('cost_type', costType)
     if (error) setError(error.message)
@@ -451,7 +475,7 @@ function CostRatesSection() {
     setVerticalLedSaved(false)
     const { error } = await supabase
       .from('app_settings')
-      .update({ vertical_led_cost_4ft: Number(verticalLedCost) || 0 })
+      .update({ vertical_led_cost_4ft: Number(verticalLedCost) || 0, vertical_led_code: verticalLedCode || null })
       .eq('id', true)
     if (error) setError(error.message)
     else {
@@ -471,13 +495,20 @@ function CostRatesSection() {
       {loading && <p className="text-sm text-slate-500">Loading…</p>}
       <div className="flex flex-col gap-3">
         {rates.map((r) => {
-          const d = drafts[r.cost_type] ?? { cost_4ft: '', cost_5ft: '', cost_7ft: '' }
+          const d = drafts[r.cost_type] ?? { cost_4ft: '', cost_5ft: '', cost_7ft: '', code: '' }
           return (
             <div
               key={r.cost_type}
               className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-800"
             >
               <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300">{r.label}</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <Field
+                  label="Code (for quotes)"
+                  value={d.code}
+                  onChange={(v) => setDrafts({ ...drafts, [r.cost_type]: { ...d, code: v } })}
+                />
+              </div>
               <div className="grid grid-cols-3 gap-3">
                 <Field
                   label="4ft cost (R)"
@@ -514,12 +545,15 @@ function CostRatesSection() {
           <p className="text-xs text-slate-400">
             Flat rate, always proportional — no 5ft/7ft fixed pricing (length ÷ 4 × cost).
           </p>
-          <Field
-            label="4ft cost (R)"
-            value={verticalLedCost}
-            type="number"
-            onChange={setVerticalLedCost}
-          />
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Code (for quotes)" value={verticalLedCode} onChange={setVerticalLedCode} />
+            <Field
+              label="4ft cost (R)"
+              value={verticalLedCost}
+              type="number"
+              onChange={setVerticalLedCost}
+            />
+          </div>
           <div className="flex items-center gap-3">
             <button
               onClick={handleSaveVerticalLed}
@@ -776,7 +810,7 @@ function CaseTypesSection() {
 
 // --- Door types ---
 
-const emptyDoorForm = { name: '', cost_4ft: '', cost_5ft: '', cost_7ft: '', heater_watts_per_ft: '' }
+const emptyDoorForm = { name: '', cost_4ft: '', cost_5ft: '', cost_7ft: '', heater_watts_per_ft: '', code: '' }
 
 function DoorTypesSection() {
   const [items, setItems] = useState<DoorType[]>([])
@@ -806,6 +840,7 @@ function DoorTypesSection() {
       cost_5ft: item.cost_5ft.toString(),
       cost_7ft: item.cost_7ft.toString(),
       heater_watts_per_ft: item.heater_watts_per_ft.toString(),
+      code: item.code ?? '',
     })
   }
 
@@ -825,6 +860,7 @@ function DoorTypesSection() {
       cost_5ft: Number(form.cost_5ft) || 0,
       cost_7ft: Number(form.cost_7ft) || 0,
       heater_watts_per_ft: Number(form.heater_watts_per_ft) || 0,
+      code: form.code || null,
     }
 
     const { error } = editingId
@@ -866,6 +902,7 @@ function DoorTypesSection() {
         </h3>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} required />
+          <Field label="Code (for quotes)" value={form.code} onChange={(v) => setForm({ ...form, code: v })} />
           <Field
             label="4ft cost (R)"
             value={form.cost_4ft}
@@ -930,7 +967,10 @@ function DoorTypesSection() {
             className="flex items-center justify-between rounded-lg border border-slate-200 p-3 dark:border-slate-800"
           >
             <div>
-              <div className="font-medium text-slate-900 dark:text-slate-100">{item.name}</div>
+              <div className="font-medium text-slate-900 dark:text-slate-100">
+                {item.name}
+                {item.code && <span className="text-slate-400"> · {item.code}</span>}
+              </div>
               <div className="text-xs text-slate-500">
                 R{item.cost_4ft}/4ft, R{item.cost_5ft}/5ft, R{item.cost_7ft}/7ft
                 {item.heater_watts_per_ft > 0 && ` · Heated (${item.heater_watts_per_ft} W/ft)`}
@@ -960,6 +1000,7 @@ function CasemSection() {
   const [installationCostPerUnit, setInstallationCostPerUnit] = useState('')
   const [savingsPercent, setSavingsPercent] = useState('')
   const [heaterDoorSavingsPercent, setHeaterDoorSavingsPercent] = useState('')
+  const [code, setCode] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -976,6 +1017,7 @@ function CasemSection() {
         setInstallationCostPerUnit(data.installation_cost_per_unit.toString())
         setSavingsPercent(data.savings_percent.toString())
         setHeaterDoorSavingsPercent(data.heater_door_savings_percent.toString())
+        setCode(data.code ?? '')
       }
       setLoading(false)
     }
@@ -995,6 +1037,7 @@ function CasemSection() {
         installation_cost_per_unit: Number(installationCostPerUnit) || 0,
         savings_percent: Number(savingsPercent) || 0,
         heater_door_savings_percent: Number(heaterDoorSavingsPercent) || 0,
+        code: code || null,
       })
       .eq('id', true)
     if (error) setError(error.message)
@@ -1023,6 +1066,7 @@ function CasemSection() {
         className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-800"
       >
         <div className="grid grid-cols-2 gap-3">
+          <Field label="Code (for quotes)" value={code} onChange={setCode} />
           <Field
             label="Baseline door & frame load (W/door)"
             value={baselineWattsPerDoor}
@@ -1404,6 +1448,7 @@ const emptyPlugInForm = {
   length_m: '',
   kwh_per_day: '',
   cost_per_unit: '',
+  code: '',
 }
 
 function PlugInFreezerTypesSection() {
@@ -1434,6 +1479,7 @@ function PlugInFreezerTypesSection() {
       length_m: item.length_m.toString(),
       kwh_per_day: item.kwh_per_day.toString(),
       cost_per_unit: item.cost_per_unit.toString(),
+      code: item.code ?? '',
     })
   }
 
@@ -1453,6 +1499,7 @@ function PlugInFreezerTypesSection() {
       length_m: Number(form.length_m) || 0,
       kwh_per_day: Number(form.kwh_per_day) || 0,
       cost_per_unit: Number(form.cost_per_unit) || 0,
+      code: form.code || null,
     }
 
     const { error } = editingId
@@ -1496,6 +1543,7 @@ function PlugInFreezerTypesSection() {
         </h3>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} required />
+          <Field label="Code (for quotes)" value={form.code} onChange={(v) => setForm({ ...form, code: v })} />
           <ShapeField value={form.shape} onChange={(v) => setForm({ ...form, shape: v })} />
           <Field
             label="Length (m)"
@@ -1720,7 +1768,7 @@ function PlugInFreezerSection() {
 
 // --- Sales reps ---
 
-const emptyRepForm = { name: '', region: '', passcode: '' }
+const emptyRepForm = { name: '', region: '', passcode: '', phone: '', email: '' }
 
 function SalesRepsSection() {
   const [reps, setReps] = useState<SalesRep[]>([])
@@ -1747,7 +1795,13 @@ function SalesRepsSection() {
 
   function startEdit(rep: SalesRep) {
     setEditingId(rep.id)
-    setForm({ name: rep.name, region: rep.region, passcode: rep.passcode })
+    setForm({
+      name: rep.name,
+      region: rep.region,
+      passcode: rep.passcode,
+      phone: rep.phone ?? '',
+      email: rep.email ?? '',
+    })
   }
 
   function resetForm() {
@@ -1760,7 +1814,13 @@ function SalesRepsSection() {
     setSaving(true)
     setError(null)
 
-    const payload = { name: form.name, region: form.region, passcode: form.passcode }
+    const payload = {
+      name: form.name,
+      region: form.region,
+      passcode: form.passcode,
+      phone: form.phone || null,
+      email: form.email || null,
+    }
 
     const { error } = editingId
       ? await supabase.from('sales_reps').update(payload).eq('id', editingId)
@@ -1832,6 +1892,17 @@ function SalesRepsSection() {
             onChange={(v) => setForm({ ...form, passcode: v })}
             required
           />
+          <Field
+            label="Phone (for quotes)"
+            value={form.phone}
+            onChange={(v) => setForm({ ...form, phone: v })}
+          />
+          <Field
+            label="Email (for quotes)"
+            value={form.email}
+            onChange={(v) => setForm({ ...form, email: v })}
+            type="email"
+          />
         </div>
         <div className="flex gap-2">
           <button
@@ -1871,7 +1942,9 @@ function SalesRepsSection() {
                   <div>
                     <div className="font-medium text-slate-900 dark:text-slate-100">{rep.name}</div>
                     <div className="text-xs text-slate-500">
-                      {rep.region} · Passcode: {rep.passcode} · Last login:{' '}
+                      {rep.region} · Passcode: {rep.passcode}
+                      {rep.phone && ` · ${rep.phone}`}
+                      {rep.email && ` · ${rep.email}`} · Last login:{' '}
                       {rep.last_login ? new Date(rep.last_login).toLocaleString() : 'Never'}
                       {surveys && ` · ${surveys.length} survey${surveys.length === 1 ? '' : 's'}`}
                     </div>

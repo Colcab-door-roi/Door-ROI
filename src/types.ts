@@ -39,6 +39,7 @@ export interface PlugInFreezerType {
   length_m: number
   kwh_per_day: number
   cost_per_unit: number
+  code: string | null
 }
 
 // Lineup-level costs that aren't tied to a specific catalog product.
@@ -62,6 +63,7 @@ export interface DoorType {
   cost_5ft: number
   cost_7ft: number
   heater_watts_per_ft: number
+  code: string | null
 }
 
 export interface CasemSettings {
@@ -70,6 +72,7 @@ export interface CasemSettings {
   installation_cost_per_unit: number
   savings_percent: number
   heater_door_savings_percent: number
+  code: string | null
 }
 
 export interface AppSettings {
@@ -82,6 +85,9 @@ export interface AppSettings {
   outlying_labour_cost_4ft: number
   vertical_led_cost_4ft: number
   vat_percent: number
+  vertical_led_code: string | null
+  subassembly_code: string | null
+  outlying_code: string | null
 }
 
 export type CostType = 'reclad' | 'canopy_led' | 'undershelf_led'
@@ -92,6 +98,7 @@ export interface CostRate {
   cost_4ft: number
   cost_5ft: number
   cost_7ft: number
+  code: string | null
 }
 
 export interface SalesRep {
@@ -101,6 +108,8 @@ export interface SalesRep {
   passcode: string
   last_login: string | null
   created_at: string
+  phone: string | null
+  email: string | null
 }
 
 export interface AdminActivityLogEntry {
@@ -120,6 +129,10 @@ export interface StoreVisit {
   electricity_rate: number
   outlying: boolean
   casem: boolean
+  attention_name: string | null
+  customer_tel: string | null
+  customer_email: string | null
+  store_location: string | null
 }
 
 export interface StoreItem {
@@ -147,6 +160,7 @@ export interface StoreItem {
   end_remote_qty: number | null
   end_plugin_freezer_type_id: string | null
   notes: string | null
+  discount_amount: number
 }
 
 export interface CalculationResult {

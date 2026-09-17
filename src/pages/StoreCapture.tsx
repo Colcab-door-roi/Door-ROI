@@ -643,6 +643,10 @@ function StoreProfileForm({
   onCancel: () => void
 }) {
   const [storeName, setStoreName] = useState(existingStore?.store_name ?? '')
+  const [attentionName, setAttentionName] = useState(existingStore?.attention_name ?? '')
+  const [customerTel, setCustomerTel] = useState(existingStore?.customer_tel ?? '')
+  const [customerEmail, setCustomerEmail] = useState(existingStore?.customer_email ?? '')
+  const [storeLocation, setStoreLocation] = useState(existingStore?.store_location ?? '')
   const [plantTypeId, setPlantTypeId] = useState(existingStore?.plant_type_id ?? plantTypes[0]?.id ?? '')
   const [doorTypeId, setDoorTypeId] = useState(existingStore?.door_type_id ?? doorTypes[0]?.id ?? '')
   const [rate, setRate] = useState((existingStore?.electricity_rate ?? defaultRate).toString())
@@ -661,6 +665,10 @@ function StoreProfileForm({
 
     const payload = {
       store_name: storeName,
+      attention_name: attentionName || null,
+      customer_tel: customerTel || null,
+      customer_email: customerEmail || null,
+      store_location: storeLocation || null,
       plant_type_id: plantTypeId,
       door_type_id: doorTypeId,
       electricity_rate: Number(rate) || 0,
@@ -721,6 +729,46 @@ function StoreProfileForm({
             required
             value={storeName}
             onChange={(e) => setStoreName(e.target.value)}
+            className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+            Attention (customer contact name)
+          </span>
+          <input
+            value={attentionName}
+            onChange={(e) => setAttentionName(e.target.value)}
+            className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Customer Tel No</span>
+          <input
+            value={customerTel}
+            onChange={(e) => setCustomerTel(e.target.value)}
+            className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Customer Email</span>
+          <input
+            type="email"
+            value={customerEmail}
+            onChange={(e) => setCustomerEmail(e.target.value)}
+            className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Store Location</span>
+          <input
+            value={storeLocation}
+            onChange={(e) => setStoreLocation(e.target.value)}
+            placeholder="e.g. WC"
             className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
           />
         </label>
@@ -841,6 +889,7 @@ const emptyItemForm = {
   endRemoteQty: '',
   endPlugInFreezerTypeId: '',
   notes: '',
+  discount: '',
 }
 
 function ItemCapture({
@@ -936,6 +985,7 @@ function ItemCapture({
       endRemoteQty: item.end_remote_qty?.toString() ?? '',
       endPlugInFreezerTypeId: item.end_plugin_freezer_type_id ?? '',
       notes: item.notes ?? '',
+      discount: item.discount_amount ? item.discount_amount.toString() : '',
     })
   }
 
@@ -981,6 +1031,7 @@ function ItemCapture({
       end_remote_qty: null,
       end_plugin_freezer_type_id: null,
       notes: form.notes || null,
+      discount_amount: Number(form.discount) || 0,
     }
 
     const payload = form.isPluginFreezer
@@ -1514,6 +1565,21 @@ function ItemCapture({
         )}
 
         <label className="flex flex-col gap-1">
+          <span className="text-sm text-slate-600 dark:text-slate-400">Line discount (R)</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            value={form.discount}
+            onChange={(e) => setForm({ ...form, discount: e.target.value.replace(',', '.') })}
+            placeholder="0"
+            className="rounded-lg border border-slate-300 bg-white p-3 text-base dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          />
+          <span className="text-xs text-slate-400">
+            Knocked off this line's amount on the quote.
+          </span>
+        </label>
+
+        <label className="flex flex-col gap-1">
           <span className="text-sm text-slate-600 dark:text-slate-400">Notes</span>
           <textarea
             value={form.notes}
@@ -1623,6 +1689,11 @@ function ItemCapture({
                     </>
                   )}
                 </div>
+                {item.discount_amount > 0 && (
+                  <div className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
+                    Discount: R{item.discount_amount}
+                  </div>
+                )}
                 {item.notes && (
                   <div className="mt-1 text-xs italic text-slate-500 dark:text-slate-400">
                     {item.notes}
